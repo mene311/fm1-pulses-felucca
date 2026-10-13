@@ -1,33 +1,30 @@
-# FM-1 Pulses
+# FM-1 Pulses · Felucca
 
-Browser-based generative MIDI sequencer for the **M-VAVE FM-1** (6-op FM synth).
-Vanilla JS + Web MIDI API + PWA. No server, no build step, no dependencies.
+A **Felucca-native fork** of [FM-1 Pulses](https://github.com/mene311/fm1-pulses).
+Same browser generator (vanilla JS + Web MIDI, no build step, no dependencies),
+but the whole pipeline targets **Felucca's** sequencer over its editor protocol —
+no Baud Girl bank, no dot matrix.
 
-**▶ Live:** https://mene311.github.io/fm1-pulses/
+The generator still makes a bank of **16 sequences**; here they map onto
+Felucca's storage: **four projects (A–D) × four tracks** — slots 1–4 → A tracks
+1–4, 5–8 → B, 9–12 → C, 13–16 → D.
 
-**Firmware:** the freeze path (pattern write, SysEx `0x20`) exists only on the
-**FM-1+VA / Baud Girl** firmware — stock firmware has no pattern-write SysEx.
-On any firmware the app still works as a live MIDI broadcaster (▶ Play and
-morph in real time).
+- **4×4 sequence matrix** (projects × tracks), each cell a mini piano roll — tap to select
+- **Piano roll** for the selected sequence (pitch rows, beat/bar lines, loop region, playhead); tap a column to select, tap again to place a note
+- **Write 16** — the whole pipeline: per project `PROJECT load` → write only the steps that differ (`TRACK_STEP`) → `PROJECT save` (flash, transport stopped)
+- **Freeze track** writes the selected sequence into the T1–T4 target track; **Clear track** empties it
+- **Play** still broadcasts live over USB (and BLE for notes); the generator is unchanged
 
-**Felucca (1.5.x)** is detected automatically (its editor protocol answers
-`INFO`): **Freeze** then writes the selected slot into the **target track**
-picked with the T1–T4 selector, over the editor's `TRACK_STEP` command — a dry
-run reads the track first and writes only the steps that differ, so refreezing
-the same slot touches nothing. **Clear** empties that track's 64 steps.
-**Send A–D** is the Felucca equivalent of Baud Girl's Send 16: Felucca has four
-projects of four 64-step tracks instead of a 16-pattern bank, so slots 1–4 go to
-project A's tracks 1–4, 5–8 to B, 9–12 to C and 13–16 to D; per project it loads
-it, writes only the changed steps, and saves it (flash, ~2 s, transport stopped).
-The protocol lives in `js/felucca.js` (pure codec, `node js/felucca.test.mjs`).
+The protocol codec lives in `js/felucca.js` (`node js/felucca.test.mjs`, 15 checks),
+validated against a real FM-1 running Felucca 1.5.1: `INFO` parsing, step
+write/read/restore, and the full `PROJECT` load/save cycle.
 
 **Signal chain:** Clock → Gate Probability → S&H → LFO → Distribution → Quantizer → MIDI out → Buffer (Loop + Deja Vu).
 
 ## Quick start
 
 It is a **sequence generator**: shape the randomness, generate a 64-step phrase,
-and **freeze** it into one of the FM-1's 16 sequencer patterns. Once frozen the
-FM-1 plays it standalone — the browser is not needed.
+and **write** it into Felucca — the FM-1 plays it standalone afterwards.
 
 ```bash
 python3 -m http.server 8080   # Web MIDI needs a secure context (https or localhost)

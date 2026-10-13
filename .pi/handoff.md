@@ -1,4 +1,10 @@
-# FM-1 Pulses — handoff
+# FM-1 Pulses · Felucca — handoff
+
+> **Fork note (2026-10-13).** This repo is the Felucca-native fork of
+> `fm1-pulses`. Pulses itself was reverted to the Baud Girl tool; all Felucca
+> work continues here: the 4×4 sequence matrix, the piano roll, `Write 16`
+> (`PROJECT` load → `TRACK_STEP` diff → `PROJECT` save) and `js/felucca.js`.
+> Deployment needs its own GitHub repo + Pages (not created yet).
 
 ## Mission
 

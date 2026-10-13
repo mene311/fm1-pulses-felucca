@@ -43,35 +43,101 @@ function noteCount(p) {
   return p ? p.steps.slice(0, p.length).reduce((a, s) => a + s.notes.length, 0) : 0;
 }
 
+// The bank: Felucca's 16 sequences as a 4×4 matrix — projects A–D (rows) ×
+// tracks 1–4 (columns) — each cell a mini piano roll of its slot. Tap to select.
+const BANK_GAP = 4;
+let bankGeo = null;
+
 function renderBank() {
-  const el = document.getElementById("bank");
-  el.innerHTML = "";
-  const ls = Math.max(0, Math.round(state.loopFrom ?? 1) - 1);   // where the loop replay begins, 0-based
-  const ln = Math.round(state.loop ?? 0);                        // loop material = the first `ln` steps
-  for (let s = 0; s < SLOTS; s++) {
-    const p = bank[s];
-    const cell = document.createElement("button");
-    cell.className = "bankcell" + (s === selected ? " sel" : "");
-    const num = document.createElement("span"); num.className = "bn"; num.textContent = s + 1;
-    const mini = document.createElement("div"); mini.className = "mini";
-    const loopOn = p && ln >= 2 && ln <= p.length && ls < p.length;
-    for (let i = 0; i < 64; i++) {
-      const d = document.createElement("i");
-      const cls = [];
-      if (p && i < p.length && p.steps[i] && p.steps[i].notes.length) cls.push("on");
-      if (loopOn && i < ln) cls.push("loop");                    // the repeated material
-      if (loopOn && i === ls) cls.push("loopstart");             // where the replay starts
-      d.className = cls.join(" ");
-      mini.appendChild(d);
+  const cv = document.getElementById("bank");
+  if (!cv) return;
+  const w = cv.clientWidth || 320, h = cv.clientHeight || 132;
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#0b0b0e";
+  ctx.fillRect(0, 0, w, h);
+
+  const left = 14, top = 4, right = 4, bottom = 4;
+  const cw = (w - left - right - 3 * BANK_GAP) / 4;
+  const ch = (h - top - bottom - 3 * BANK_GAP) / 4;
+  bankGeo = { left, top, cw, ch };
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#e8a33d";
+  const ls = Math.max(0, Math.round(state.loopFrom ?? 1) - 1);
+  const ln = Math.round(state.loop ?? 0);
+  ctx.font = "8px 'Barlow Semi Condensed', sans-serif";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+
+  for (let r = 0; r < 4; r++) {
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.fillText("ABCD"[r], 2, top + r * (ch + BANK_GAP) + ch / 2);
+    for (let c = 0; c < 4; c++) {
+      const s = r * 4 + c;
+      const x = left + c * (cw + BANK_GAP), y = top + r * (ch + BANK_GAP);
+      const p = bank[s];
+      const sel = s === selected;
+      ctx.fillStyle = sel ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.025)";
+      ctx.fillRect(x, y, cw, ch);
+      if (p && ln >= 2 && ln <= p.length && ls < p.length) {
+        ctx.fillStyle = "rgba(255,255,255,0.05)";
+        ctx.fillRect(x + cw * (ls / 64), y, cw * (Math.min(ln, p.length - ls) / 64), ch);
+      }
+      let lo = 127, hi = 0, n = 0;
+      for (let i = 0; i < 64; i++)
+        for (const nt of p?.steps?.[i]?.notes ?? []) { if (nt.note < lo) lo = nt.note; if (nt.note > hi) hi = nt.note; }
+      if (hi >= lo) {
+        const span = Math.max(1, hi - lo);
+        for (let i = 0; i < 64; i++) {
+          for (const nt of p.steps[i]?.notes ?? []) {
+            const yb = y + 1 + (ch - 2) * (1 - (nt.note - lo) / span);
+            const bh = Math.max(1.2, (ch - 2) / (span + 1));
+            ctx.globalAlpha = sel ? 0.95 : 0.6;
+            ctx.fillStyle = accent;
+            ctx.fillRect(x + (cw / 64) * i + 0.5, yb - bh / 2, Math.max(1, cw / 64 - 0.5), bh);
+            n++;
+          }
+        }
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.strokeStyle = "rgba(255,255,255,0.12)";
+        ctx.beginPath(); ctx.moveTo(x + 2, y + ch / 2 + 0.5); ctx.lineTo(x + cw - 2, y + ch / 2 + 0.5); ctx.stroke();
+      }
+      ctx.strokeStyle = sel ? accent : "rgba(255,255,255,0.10)";
+      ctx.lineWidth = sel ? 1.5 : 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1);
+      ctx.lineWidth = 1;
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
+      ctx.fillText(String(c + 1), x + 3, y + 6);
+      if (n) {
+        ctx.textAlign = "right";
+        ctx.fillStyle = "rgba(255,255,255,0.45)";
+        ctx.fillText(String(n), x + cw - 3, y + ch - 5);
+        ctx.textAlign = "left";
+      }
     }
-    const cnt = document.createElement("span"); cnt.className = "bc"; cnt.textContent = noteCount(p);
-    cell.append(num, mini, cnt);
-    cell.title = `slot ${s + 1}: ${noteCount(p)} notes`;
-    cell.addEventListener("click", () => { selected = s; renderBank(); renderBuffer(); if (!live) playOnce(s); });
-    el.appendChild(cell);
   }
   const el2 = document.getElementById("bufinfo");
   if (el2) el2.textContent = bank.length ? `drift ${state.drift}%` : "";
+}
+
+// Which sequence the pointer/tap is on (projects A–D × tracks 1–4).
+function bankPad(ev) {
+  const cv = document.getElementById("bank");
+  if (!cv || !bankGeo) return null;
+  const r = cv.getBoundingClientRect();
+  const x = ev.clientX - r.left - bankGeo.left;
+  const y = ev.clientY - r.top - bankGeo.top;
+  const rw = Math.floor(y / (bankGeo.ch + BANK_GAP));
+  const c = Math.floor(x / (bankGeo.cw + BANK_GAP));
+  if (rw < 0 || rw > 3 || c < 0 || c > 3) return null;
+  if (x - c * (bankGeo.cw + BANK_GAP) > bankGeo.cw) return null;
+  if (y - rw * (bankGeo.ch + BANK_GAP) > bankGeo.ch) return null;
+  return rw * 4 + c;
 }
 
 function applyLocks() {
@@ -123,14 +189,14 @@ function setStepNote(i, note) {
 function clearLocks() { locks.clear(); renderBank(); renderBuffer(); refreshLockCount(); status("locks cleared"); }
 
 function renderBuffer() {
-  const el = document.getElementById("steps");
-  el.innerHTML = "";
+  const el = document.getElementById("steps");        // the fork has no dot grid
   const p = bank[selected];
   if (!p) return;
+  if (el) el.innerHTML = "";
   const ls = Math.max(0, Math.round(state.loopFrom ?? 1) - 1);   // where the loop replay begins, 0-based
   const ln = Math.round(state.loop ?? 0);                        // loop material = the first `ln` steps
   const loopOn = ln >= 2 && ln <= p.length && ls < p.length;
-  for (let i = 0; i < 64; i++) {
+  for (let i = 0; el && i < 64; i++) {
     const st = p.steps[i];
     const cell = document.createElement("div");
     cell.className = "cell";
@@ -185,7 +251,7 @@ let rollHover = null, rollGeo = null;
 
 function renderRoll() {
   const cv = document.getElementById("roll");
-  if (!cv || !cv.clientWidth || profile !== "felucca") return;
+  if (!cv || !cv.clientWidth) return;
   const p = bank[selected];
   if (!p) return;
 
@@ -298,7 +364,7 @@ function renderRoll() {
 // Which step and pitch a pointer is over (for the tap-to-place editing).
 function rollHit(ev) {
   const cv = document.getElementById("roll");
-  if (!cv || !rollGeo || profile !== "felucca") return null;
+  if (!cv || !rollGeo) return null;
   const r = cv.getBoundingClientRect();
   const x = ev.clientX - r.left - ROLL_PADX;
   const y = ev.clientY - r.top - ROLL_PADT;
@@ -496,7 +562,6 @@ function scheduleRegen() {
     applyLocks();
     renderBank(); renderBuffer();
   }, 40);
-  scheduleTempoProbe();
 }
 
 // Trailing device-tempo probe: every control tweak schedules ONE read that fires
@@ -575,62 +640,15 @@ async function syncDeviceTempo(data = null, retries = 2) {
 
 async function doFreeze(slotIndex) {
   if (!bank[slotIndex]) return;
-  if (profile === "felucca") return doFreezeFelucca(slotIndex);
-  syncHeader();
-  try {
-    status(`freezing slot ${slotIndex + 1} · ${Math.round(state.tempo)} bpm · ${RATE_NAMES[state.rate]}…`);
-    const name = await midi.sendPattern(encodeWrite(bank[slotIndex], slotIndex, true), `slot ${slotIndex + 1}`);
-    // read it back: did the DEVICE store the tempo we just sent? (Spoiler on
-    // Baud Girl 093: never. The tempo bytes are acked and discarded, so we
-    // re-sync the knob to the device's real BPM instead of pretending.)
-    try {
-      const { tempo: held, data } = await readBack(slotIndex);
-      const want = Math.round(state.tempo);
-      const off = 66 + 2 * slotIndex;
-      if (held !== want) {
-        await syncDeviceTempo(data);
-        status(`slot ${slotIndex + 1} frozen ✓ · FM-1 holds ${held} bpm (sent ${want}) — tempo is device-global on this firmware, so Tempo now shows the device's BPM`,
-          "err");
-      } else {
-        status(`slot ${slotIndex + 1} frozen ✓ · sent ${want} bpm, device holds ${held} bpm`, "ok");
-      }
-    } catch (e) {
-      await syncDeviceTempo();
-      status(`slot ${slotIndex + 1} frozen ✓ (read-back: ${e.message || e})`, "ok");
-    }
-  } catch (e) { status(String(e.message || e), "err"); }
+  return doFreezeFelucca(slotIndex);
 }
 
 async function doSendAll() {
-  if (profile === "felucca") return doSendAllFelucca();
-  if (busy || !bank.length) return;
-  busy = true;
-  try {
-    syncHeader();
-    for (let i = 0; i < SLOTS; i++) {
-      status(`freezing ${i + 1}/${SLOTS} · ${Math.round(state.tempo)} bpm · ${RATE_NAMES[state.rate]}…`);
-      await midi.sendPattern(encodeWrite(bank[i], i, true), `slot ${i + 1}`);
-    }
-    const held = await syncDeviceTempo();
-    status(`all ${SLOTS} slots frozen ✓${held ? ` · device holds ${held} bpm` : ""}`, "ok");
-  } catch (e) { status(String(e.message || e), "err"); }
-  finally { busy = false; }
+  return doSendAllFelucca();
 }
 
 async function doClearAll() {
-  if (busy || !bank.length) return;
-  if (!confirm(`Erase all ${SLOTS} patterns on the FM-1?\n\nThis overwrites them with empty patterns. The browser bank is not affected.`)) return;
-  busy = true;
-  try {
-    const blank = emptyPattern(64, state.rate, state.tempo, state.gate, state.swing);
-    for (let i = 0; i < SLOTS; i++) {
-      status(`clearing ${i + 1}/${SLOTS}…`);
-      await midi.sendPattern(encodeWrite(blank, i, true), `slot ${i + 1}`);
-    }
-    const held = await syncDeviceTempo();
-    status(`all ${SLOTS} patterns cleared ✓${held ? ` · device holds ${held} bpm` : ""}`, "ok");
-  } catch (e) { status(String(e.message || e), "err"); }
-  finally { busy = false; }
+  return doClearTrackFelucca();
 }
 
 // --------------------------------------------------------------------------- //
@@ -641,30 +659,19 @@ let fwInfo = null;       // the INFO reply while the Felucca profile is on
 const felTrack = () => Math.max(0, Math.min(3, Number(document.getElementById("ftrack")?.value ?? 0) || 0));
 
 function paintProfile() {
-  const isFel = profile === "felucca";
   const ft = document.getElementById("ftrack");
-  if (ft) ft.style.display = isFel ? "" : "none";
+  if (ft) ft.style.display = "";
   const roll = document.getElementById("roll");
-  if (roll) roll.style.display = isFel ? "block" : "none";
+  if (roll) roll.style.display = "block";
   const steps = document.getElementById("steps");
-  if (steps) steps.style.display = isFel ? "none" : "";
-  if (isFel) renderRoll(); else fitSteps();
+  if (steps) steps.style.display = "none";
+  renderRoll();
   const freezeBtn = document.getElementById("freeze");
-  if (freezeBtn) freezeBtn.title = isFel ? "Write the selected slot into the target track (F)"
-                                         : "Write the selected slot into the FM-1 (F)";
+  if (freezeBtn) freezeBtn.title = "Write the selected sequence into the target track (F)";
   const fillBtn = document.getElementById("fill");
-  if (fillBtn) {
-    fillBtn.disabled = false;
-    fillBtn.textContent = isFel ? "Send A–D" : "Send 16";
-    fillBtn.title = isFel
-      ? "Write all 16 slots into the four projects A–D: slots 1–4 → A tracks 1–4, then B, C, D — replaces their steps and saves flash"
-      : "Write all 16 slots into the FM-1";
-  }
+  if (fillBtn) fillBtn.title = "Write all 16 sequences into projects A–D (slots 1–4 → A tracks 1–4, then B, C, D) — saves flash";
   const clearBtn = document.getElementById("clearall");
-  if (clearBtn) clearBtn.title = isFel ? "Clear the 64 steps of the target track on the FM-1"
-                                       : "Erase all 16 patterns on the FM-1";
-  const diagBtn = document.getElementById("diag");
-  if (diagBtn && isFel) diagBtn.style.display = "none";
+  if (clearBtn) clearBtn.title = "Clear the target track's 64 steps on the FM-1";
 }
 
 // INFO answers on Felucca (and its forks); the Baud Girl firmwares do not
@@ -1401,7 +1408,7 @@ function buildTransport() {
   const ft = document.createElement("select");
   ft.id = "ftrack";
   ft.title = "Felucca target track — Freeze and Clear act on it";
-  ft.setAttribute("style", "display:none;font:600 11px/1.4 inherit;padding:2px 6px;border-radius:6px;background:#1b1926;color:#ececf0;border:1px solid #3a3750");
+  ft.setAttribute("style", "font:600 11px/1.4 inherit;padding:2px 6px;border-radius:6px;background:#1b1926;color:#ececf0;border:1px solid #3a3750");
   for (let i = 0; i < 4; i++) ft.append(new Option(`T${i + 1}`, String(i)));
   document.getElementById("freeze").insertAdjacentElement("beforebegin", ft);
   ft.addEventListener("change", () => status(`Felucca target: track ${Number(ft.value) + 1}`));
@@ -1450,25 +1457,13 @@ async function initMidi() {
   try {
     await midi.initMidi();
     fill();
-    // Re-sync whenever the device (re)connects or drops: the FM-1's tempo is
-    // device-global and the device is the source of truth.
+    // Felucca only: INFO is the handshake; there is no 0x11 memory read here.
     midi.onStateChange(() => {
       fill();
-      if (midi.findFm1()) {
-        detectFirmware().then((info) => {
-          if (!info) syncDeviceTempo().then((held) => {
-            if (held) status(`FM-1 connected · device holds ${held} BPM — Tempo synced`, "ok");
-          });
-        });
-      }
+      if (midi.findFm1()) detectFirmware();
     });
-    // WYSIWYG tempo: snap the knob to the device's real (unit-global) BPM — the
-    // Baud Girl memory read does not exist on Felucca, whose protocol is INFO/step.
     const info = await detectFirmware();
-    if (!info) {
-      const held = await syncDeviceTempo();
-      if (held) status(`FM-1: ${midi.findFm1()?.name ?? ""} · device holds ${held} BPM — Tempo synced`, "ok");
-    }
+    if (!info) status("connect the FM-1 running Felucca (USB) and reload", "err");
   } catch (e) {
     status(String(e.message || e), "err");
     const n = nameEl();
@@ -1544,4 +1539,14 @@ rcv?.addEventListener("pointerdown", (e) => {
   if (!hit) return;
   if (hit.i !== editStep) { selectStep(hit.i); return; }
   setStepNote(hit.i, hit.note);
+});
+
+// The 4×4 sequence matrix: tap a cell (project A–D × track 1–4) to select it.
+document.getElementById("bank")?.addEventListener("pointerdown", (e) => {
+  const s = bankPad(e);
+  if (s == null) return;
+  selected = s;
+  renderBank();
+  renderBuffer();
+  if (!live) playOnce(s);
 });

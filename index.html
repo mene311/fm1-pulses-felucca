@@ -4,21 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#12101a">
-<title>FM-1 Pulses</title>
+<title>FM-1 Pulses · Felucca</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="css/style.css?v=70">
-<link rel="stylesheet" href="css/rack.css?v=81">
+<link rel="stylesheet" href="css/rack.css?v=82">
 </head>
 <body>
 <div class="case">
   <header class="brand">
-    <h1>FM-1 <b>PULSES</b></h1>
+    <h1>FM-1 <b>PULSES</b> <small style="font-size:10px;letter-spacing:.14em;opacity:.65">FELUCCA</small></h1>
     <div class="dev">
       <span class="led" id="led"></span>
       <span id="devname">no MIDI</span>
     </div>
   </header>
-  <div class="statusrow"><a class="glink" href="guide.html">guide</a><a class="glink" id="export" title="Download the current state (knobs, seed, locks) as JSON — share it, import it later, reproduce the exact bank.">export</a><a class="glink" id="import" title="Load a state JSON file exported from FM-1 Pulses.">import</a><a class="glink" id="syx" title="Download the whole 16-slot bank as a .syx file — the SysEx messages any FM-1 tool can push to the device.">sysex</a><a class="glink" id="ble" title="Connect the FM-1 over Bluetooth MIDI for cable-free playback. Freeze and device reads still need USB.">bluetooth</a><a class="glink" id="tips" title="Show or hide tooltips — turn them off if the hints cover the panel on a phone.">tips on</a><input type="file" id="importfile" accept=".json,application/json" hidden><button class="glink" id="diag" style="display:none" title="Read the FM-1's settings block, show it, and sync the Tempo knob to the device's BPM. Change one thing on the device itself, read again, and the bytes that move are that setting.">read device</button><span id="status" class="status">loading…</span></div>
+  <div class="statusrow"><a class="glink" href="guide.html">guide</a><a class="glink" id="export" title="Download the current state (knobs, seed, locks) as JSON — share it, import it later, reproduce the exact bank.">export</a><a class="glink" id="import" title="Load a state JSON file exported from FM-1 Pulses.">import</a><a class="glink" id="ble" title="Connect the FM-1 over Bluetooth MIDI for cable-free playback. Freeze and device reads still need USB.">bluetooth</a><a class="glink" id="tips" title="Show or hide tooltips — turn them off if the hints cover the panel on a phone.">tips on</a><input type="file" id="importfile" accept=".json,application/json" hidden><span id="status" class="status">loading…</span></div>
 
   <div class="layout">
     <div class="module">
@@ -28,8 +28,8 @@
         <button id="audition" title="Loop the selected slot (Space)">▶ Play</button>
         <button id="mute" title="Mute / unmute the browser preview (starts muted)">🔇</button>
         <button id="freeze" title="Write the selected slot into the FM-1 (F)">Freeze</button>
-        <button id="fill" title="Write all 16 slots into the FM-1">Send 16</button>
-        <button id="clearall" title="Erase all 16 patterns on the FM-1">Clear</button>
+        <button id="fill" title="Write all 16 sequences into the FM-1's projects A–D">Write 16</button>
+        <button id="clearall" title="Clear the target track's 64 steps on the FM-1">Clear track</button>
       </div>
 
       <div class="presets" id="presets"></div>
@@ -40,8 +40,7 @@
 
     <div class="display">
       <h2>Pattern <small>slot <b id="selnum">1</b></small> <small id="bufinfo"></small> <small id="loopinfo"></small></h2>
-      <div id="bank" class="bank"></div>
-      <div id="steps" class="steps"></div>
+      <canvas id="bank" class="bankroll" aria-label="Projects A–D, tracks 1–4 — tap a sequence"></canvas>
       <canvas id="roll" class="roll" aria-hidden="true"></canvas>
       <canvas id="wave" class="wave" height="60"></canvas>
       <div id="editor" class="editor">
@@ -57,6 +56,6 @@
     </div>
   </div>
 </div>
-<script type="module" src="js/rack.js?v=91"></script>
+<script type="module" src="js/rack.js?v=92"></script>
 </body>
 </html>
