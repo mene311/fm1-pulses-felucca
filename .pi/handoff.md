@@ -4,7 +4,7 @@
 > `fm1-pulses`. Pulses itself was reverted to the Baud Girl tool; all Felucca
 > work continues here: the 4×4 sequence matrix, the piano roll, `Write 16`
 > (`PROJECT` load → `TRACK_STEP` diff → `PROJECT` save) and `js/felucca.js`.
-> Deployment needs its own GitHub repo + Pages (not created yet).
+> Live: https://mene311.github.io/fm1-pulses-felucca/
 
 ## Mission
 

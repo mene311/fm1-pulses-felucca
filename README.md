@@ -5,6 +5,8 @@ Same browser generator (vanilla JS + Web MIDI, no build step, no dependencies),
 but the whole pipeline targets **Felucca's** sequencer over its editor protocol —
 no Baud Girl bank, no dot matrix.
 
+**▶ Live:** https://mene311.github.io/fm1-pulses-felucca/
+
 The generator still makes a bank of **16 sequences**; here they map onto
 Felucca's storage: **four projects (A–D) × four tracks** — slots 1–4 → A tracks
 1–4, 5–8 → B, 9–12 → C, 13–16 → D.
