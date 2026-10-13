@@ -869,17 +869,16 @@ async function playOnce(index) {
 }
 
 function clearPlayhead() {
-  if (nowCell) nowCell.classList.remove("now");
+  if (nowCell) nowCell.classList.remove("now");   // (no dot grid in the fork; kept for safety)
   nowCell = null;
   scopeNow = null;
   renderScope();
 }
 
+// The fork's playhead lives in the piano roll (scopeNow), not in a step cell.
 function markStep(i) {
-  const el = document.getElementById("steps");
   if (nowCell) nowCell.classList.remove("now");
-  nowCell = el.children[i] || null;
-  if (nowCell) nowCell.classList.add("now");
+  nowCell = null;
   scopeNow = i;
   renderScope();
 }
