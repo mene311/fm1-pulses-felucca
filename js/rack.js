@@ -1481,9 +1481,7 @@ document.addEventListener("keydown", (e) => {
 
 // Coming back to the tab re-syncs the Tempo knob to the device's real BPM —
 // the user may have turned the tempo knob on the unit while we were away.
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && profile !== "felucca" && midi.hasAccess() && midi.findFm1()) syncDeviceTempo();
-});
+// (No Baud Girl tempo read-back in this fork: nothing to re-sync on tab focus.)
 
 buildTheme();
 buildRack();
