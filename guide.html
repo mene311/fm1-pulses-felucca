@@ -99,11 +99,11 @@
   </div>
   <div class="param">
     <h3>Gate <span class="rng">0–100%</span><span class="kind">knob</span></h3>
-    <p><b>Random mode:</b> the chance each step plays a note — 0% silence, 100% every step. <b>Euclid mode:</b> the same knob becomes <i>density</i>: Gate % becomes N hits spread as evenly as possible over the cycle (the Loop length, or 16 steps if the loop is off). E(5,8) = <code>x.xx.xx.</code> (cinquillo), E(4,8) = <code>x.x.x.x.</code>, E(3,8) is a tresillo-family pattern. The loop info line shows the current <code>E(N,M)</code>.</p>
+    <p><b>Random mode:</b> the chance each step plays a note — 0% silence, 100% every step. <b>Euclid mode:</b> the same knob becomes <i>density</i>: Gate % becomes N hits spread as evenly as possible over the cycle (the Loop length, or 16 steps if the loop is off). E(5,8) = <code>x.xx.xx.</code> (cinquillo), E(4,8) = <code>x.x.x.x.</code>, E(3,8) is a tresillo-family pattern. The loop info line shows the current <code>E(N,M)</code> and its mask, and names the classic you land on.</p>
   </div>
   <div class="param">
     <h3>Euclid <span class="rng">0–100%</span><span class="kind">knob</span></h3>
-    <p>The gradient between two ways of placing the hits. <b>0% = random</b>: each step rolls the Gate chance (white noise, no structure). <b>100% = euclid</b>: the hits sit at the evenest positions of the cycle — the maths behind clave, tresillo and most world-music rhythms. In between, each step rolls which law it follows, so a pattern erodes gradually from clean Euclid to loose random. Gate % is the density on both ends, and the loop info line names the classics when you land on one:</p>
+    <p>The gradient between two ways of placing the hits. <b>0% = random</b>: each step rolls the Gate chance (white noise, no structure). <b>100% = euclid</b>: the hits sit at the evenest positions of the cycle — the maths behind clave, tresillo and most world-music rhythms. In between, each step rolls which law it follows, so a pattern erodes gradually from clean Euclid to loose random. Gate % is the density on both ends, so this knob moves the rhythm, not the note count — drop Gate to hear the classics. The loop info line shows the mask and names the classic when you land on one:</p>
     <p><code>tresillo</code> x..x..x. — Gate 37%, Loop 8<br>
     <code>cinquillo</code> x.xx.xx. — Gate 62%, Loop 8<br>
     <code>son clave</code> x..x..x...x.x... — Gate 31%, Loop 16<br>

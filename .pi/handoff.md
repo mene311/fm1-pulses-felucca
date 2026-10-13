@@ -79,6 +79,22 @@ selected slot and morph it in real time).
       column its own generator state (a switch touching nothing else) is a bigger change to the
       slot → (project, track) mapping in `generateBank` — needs a call on whether drift should
       stay 16 slots or become 4 per column.
+- [x] **Euclid knob felt dead (2026-10-13).** The knob was wired end to end — it changes
+      the bank and the pattern the FM-1 gets (`XXX.XXX.XXX…` at 100%, rotated by Rotate) —
+      but two things hid it:
+      1. **A full-range drag needed 180 px of travel** (`knob.js`), so a normal phone swipe
+         moved the gradient 20–40%: a mix of euclid and random that reads as noise. `knob()`
+         takes a `sens` (px for the whole range) now; the Euclid knob uses **60** (shift still
+         gives fine control at 5×).
+      2. **The classic readout was dead code.** `classicName` was imported by `rack.js` and
+         never called, so the loop info line the guide promises ("it names the classics") only
+         showed `E(N,M)`. It now shows the mask and the name:
+         `loop 1–8 ×8.0 from 1 · E(3,8) x..x..x. tresillo rot 2`, `E(5,8) x.xx.xx. cinquillo`.
+      Reminder for the docs: **Gate % is the density on BOTH ends** (the knob moves placement,
+      not note count) and the cycle is the Loop length (16 steps with the loop off), so the
+      classics only appear at their densities — E(3,8) at 37%, E(5,8) at 62%, E(5,16)
+      (son clave) at 31% with Loop 16. At Gate 100% (or 0%) euclid and random are identical
+      by construction.
 - [x] Bank strip (16 mini step-maps), tap to select, `←`/`→`
 - [x] 64-step grid, one **circle** per step (white = rest, accent = note)
 - [x] **Step editing + locks** — click a step, `±` semitone, `✕` empty; edits

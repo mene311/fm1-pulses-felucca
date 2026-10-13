@@ -1,12 +1,12 @@
 // rack.js — the single-module knob UI. Same engine as app.js (generator, pattern,
 // midi, audio); only the controls differ: one portrait case, knobs on top and the
 // pattern display inside the case below. app.js and the MVP are untouched.
-import { generate, generateBank, SCALES, LFO_WAVES, midiName, classicName } from "./generator.js?v=71";
+import { generate, generateBank, SCALES, LFO_WAVES, midiName, classicName, euclid } from "./generator.js?v=71";
 import { encodeWrite, emptyPattern } from "./pattern.js?v=65";
 import * as midi from "./midi.js?v=70";
 import * as fel from "./felucca.js?v=2";
 import * as audio from "./audio.js?v=67";
-import { knob, sw } from "./knob.js?v=66";
+import { knob, sw } from "./knob.js?v=67";
 
 const RATE_NAMES = ["1/1", "1/2", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/32T"];
 const RATE_QUARTERS = [4, 2, 1, 2 / 3, 0.5, 1 / 3, 0.25, 1 / 6, 0.125, 1 / 12];
@@ -1160,10 +1160,10 @@ function buildRack() {
         format: (v) => `${Math.round(v)}%`,
         onInput: (v) => { state.gateProb = v; refreshLoopInfo(); scheduleRegen(); },
         tip: "random mode: chance each step fires. euclid mode: the DENSITY — Gate % becomes N hits evenly spaced over the cycle (see the loop info line)." })),
-      R("gateBlend", knob({ label: "Euclid", min: 0, max: 100, value: state.gateBlend, def: DEFAULT.gateBlend, size: "md",
+      R("gateBlend", knob({ label: "Euclid", min: 0, max: 100, step: 1, value: state.gateBlend, def: DEFAULT.gateBlend, size: "md", sens: 60,
         format: (v) => v <= 0 ? "random" : v >= 100 ? "euclid" : `${Math.round(v)}%`,
         onInput: (v) => { state.gateBlend = v; refreshLoopInfo(); scheduleRegen(); },
-        tip: "Gradient between random placement (0%) and even Euclidean spacing (100%). In between, each step rolls which law it follows — Gate % is the density either way." })),
+        tip: "Gradient between random placement (0%) and even Euclidean spacing (100%). In between, each step rolls which law it follows — Gate % is the DENSITY either way, so drop Gate to hear the classics (E(3,8) tresillo, E(5,8) cinquillo). The loop info line names them." })),
       R("euclidRot", knob({ label: "Rotate", min: 0, max: 15, step: 1, value: state.euclidRot, def: DEFAULT.euclidRot, size: "sm",
         format: (v) => `${Math.round(v)}`,
         onInput: (v) => { state.euclidRot = v; refreshLoopInfo(); scheduleRegen(); },
@@ -1304,7 +1304,11 @@ function refreshLoopInfo() {
     const M = Math.max(2, n >= 2 ? n : 16);
     const N = Math.max(0, Math.min(M, Math.round((state.gateProb ?? 70) / 100 * M)));
     const rot = ((state.euclidRot ?? 0) % M + M) % M;
-    el.textContent = `${loopTxt} · E(${N},${M})${rot ? " rot " + rot : ""}${blend < 1 ? " @" + Math.round(blend * 100) + "%" : ""}`;
+    // the mask as it lands (before the rotation) + the classic it is, so turning
+    // the knob shows its effect instead of just a percentage
+    const mask = euclid(N, M).join("").replace(/1/g, "x").replace(/0/g, ".");
+    const cn = classicName(N, M);
+    el.textContent = `${loopTxt} · E(${N},${M}) ${mask}${cn ? " " + cn : ""}${rot ? " rot " + rot : ""}${blend < 1 ? " @" + Math.round(blend * 100) + "%" : ""}`;
   } else el.textContent = loopTxt;
 }
 

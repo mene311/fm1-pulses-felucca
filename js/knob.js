@@ -3,6 +3,9 @@
 //
 // Interaction: drag vertically, mouse wheel, arrow keys, double-click to reset,
 // hold shift for fine control. touch-action:none keeps a finger drag from scrolling.
+// `sens` is the px of vertical travel for the full range (default 180): a knob whose
+// interesting values are few (a 0-100% gradient) wants a short one so a phone swipe
+// reaches the end.
 
 const NS = "http://www.w3.org/2000/svg";
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -17,7 +20,7 @@ const SIZES = { lg: 62, md: 50, sm: 40 };
 
 let knobSeq = 0;
 
-export function knob({ label, min, max, step = 1, value = 0, def, size = "md", format, ticks = 10, majorEvery = 5, smallVal = false, onInput, tip = "", onDblClick }) {
+export function knob({ label, min, max, step = 1, value = 0, def, size = "md", format, ticks = 10, majorEvery = 5, smallVal = false, onInput, tip = "", onDblClick, sens = 180 }) {
   const px = SIZES[size] || SIZES.md;
   const el = document.createElement("div");
   el.className = `knob k-${size}` + (smallVal ? " k-smallval" : "");
@@ -131,8 +134,8 @@ export function knob({ label, min, max, step = 1, value = 0, def, size = "md", f
   el.addEventListener("pointermove", (e) => {
     if (!dragging) return;
     const range = max - min;
-    const sens = e.shiftKey ? 900 : 180;   // px of travel for the full range
-    set(dragging.v + (dragging.y - e.clientY) / sens * range);
+    const travel = e.shiftKey ? sens * 5 : sens;   // px of travel for the full range
+    set(dragging.v + (dragging.y - e.clientY) / travel * range);
   });
   const endDrag = (e) => {
     if (!dragging) return;
