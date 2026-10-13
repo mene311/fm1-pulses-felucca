@@ -1111,6 +1111,10 @@ function applyTheme(id) {
   renderScope();
 }
 
+// The build stamp in the themebar: /js and /css URLs are cached per `?v=`, so if
+// this number is not the one you just pushed, the page itself came from cache.
+const BUILD = 101;
+
 function buildTheme() {
   const menu = document.getElementById("themes");
   for (const t of THEMES) {
@@ -1123,6 +1127,12 @@ function buildTheme() {
   }
   const saved = localStorage.getItem("fm1p.theme");
   applyTheme(THEMES.some((t) => t.id === saved) ? saved : "purple");
+  const stamp = document.createElement("span");
+  stamp.id = "build";
+  stamp.textContent = "v" + BUILD;
+  stamp.setAttribute("style", "font:600 9px/1 inherit;opacity:.5;margin-left:auto;align-self:center;cursor:default");
+  stamp.title = "Build of the app: if this is not the newest, the page came from the browser cache - reload it";
+  menu.insertAdjacentElement("afterend", stamp);
 }
 
 // --------------------------------------------------------------------------- //
@@ -1402,10 +1412,25 @@ function readTrackStates() {
   return {};
 }
 
+// Says, in the header, whose knobs you are looking at and whether they are stored:
+// "T2 knobs ✓" (this track has its own) or "T2 knobs —" (nothing stored yet, so it
+// inherited what was on screen). It is the honest answer to "did that stick?".
+function paintTrackState() {
+  const el = document.getElementById("trackstate");
+  if (!el) return;
+  const t = activeTrack();
+  const stored = !!readTrackStates()[t];
+  el.textContent = `T${t + 1} knobs ${stored ? "✓" : "—"}`;
+  el.title = stored
+    ? `Track ${t + 1} keeps its own knobs (as do the preset slots above)`
+    : `Track ${t + 1} has nothing stored yet: it starts from what is on screen, and stores its own the moment you turn something`;
+}
+
 function saveTrackState() {
   const b = readTrackStates();
   b[activeTrack()] = Object.fromEntries(TRACK_KEYS.map((k) => [k, state[k]]));
   try { localStorage.setItem(TRACK_STATE_KEY, JSON.stringify(b)); } catch { /* blocked/full */ }
+  paintTrackState();
 }
 
 function restoreTrackState(t) {
@@ -1414,6 +1439,7 @@ function restoreTrackState(t) {
   for (const k of TRACK_KEYS) if (k in d) state[k] = d[k];
   refs.seed?.setValue(state.seed, false);
   syncRack();
+  paintTrackState();
   return true;
 }
 
@@ -1437,6 +1463,7 @@ function selectSlot(next) {
     }
     syncDestTrack();                                   // Freeze / Clear / Play follow the cell
     followTrack(felTrack() + 1);                       // ROUT SEL: the unit's own selection follows too
+    paintTrackState();                                 // whose knobs these are, and whether they are stored
   }
   renderBank(); renderBuffer();
 }
@@ -1756,6 +1783,7 @@ buildEditor();
 if (restoreTrackState(activeTrack())) { syncRack(); doGenerate(false); }   // the track's own knobs, if it has any
 else doGenerate(true);
 syncDestTrack();
+paintTrackState();
 // the knobs of the track you are on survive a reload / tab close even when the last
 // thing touched was a knob whose onInput does not regenerate (Note len)
 window.addEventListener("pagehide", () => { try { saveTrackState(); } catch (_) {} });

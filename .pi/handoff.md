@@ -113,6 +113,16 @@ selected slot and morph it in real time).
       stick)`, against `track 1: knobs restored — seed …`. Verified in one browser context across
       reloads: 5 st on track 1 / 10 st on track 2, both survive a reload. NOTE: the matrix cursor
       itself is not persisted (a reload lands on slot 1 = T1), only the knobs are.
+- [x] **Making the per-track store visible (2026-10-13).** It was already working, but nothing
+      on screen said so, and the library URLs are cache-busted per `?v=` while **the page itself
+      is not**: GitHub Pages serves the HTML from cache for ~10 min, so a phone can sit on a whole
+      build behind and the feature simply is not there. Two additions:
+      - a **build stamp** (bottom right, `v101`) rendered from `const BUILD` in `rack.js` — **bump
+        it together with the `?v=` in `index.html`**; if the number is not the newest, reload.
+      - a header indicator, `T3 knobs ✓` when the selected track has its own stored knobs and
+        `T3 knobs —` when it has none yet (it is inheriting), via `paintTrackState()`.
+      Verified: boot `T1 knobs ✓` → turn a knob → `T2 knobs —` on a fresh track → turn → `T2 knobs ✓`
+      → back on T1 the value is the one it had, and it survives a reload.
 - [x] Bank strip (16 mini step-maps), tap to select, `←`/`→`
 - [x] 64-step grid, one **circle** per step (white = rest, accent = note)
 - [x] **Step editing + locks** — click a step, `±` semitone, `✕` empty; edits
