@@ -778,9 +778,12 @@ async function felSelectTrack(track) {
 }
 
 // Keep the device's selected track in step with what we play (only needed under
-// ROUT = SEL, where the device's own selection decides which part sounds).
+// ROUT = SEL, where the device's own selection decides which part sounds). Mid-play
+// we leave it alone: switching the unit's track under a held note leaves it
+// sounding (its note-off would land on the track just selected). ROUT = CH1-4 needs
+// nothing here at all.
 async function followTrack(track) {
-  if (profile !== "felucca" || deviceRoute !== 1) return;
+  if (profile !== "felucca" || deviceRoute !== 1 || live) return;
   await felSelectTrack(track - 1);
 }
 
@@ -954,7 +957,7 @@ async function playOnce(index) {
   audio.unlock();
   const qMs = 60000 / Math.max(20, Math.min(300, state.tempo || 120));
   const gate = Math.min(100, Math.max(5, state.gate ?? 50)) / 100;
-  const ch = (slot % 4) + 1;
+  const ch = felTrack() + 1;                  // the preview rides the destination track, like Play
   const off = releasesOf(p);
   for (let i = 0; i < p.length; i++) {
     if (token !== onceToken || live) return;
@@ -1005,10 +1008,12 @@ function toggleLive() {
   audio.unlock();
   const btn = document.getElementById("audition");
   btn.textContent = "■ Stop"; btn.classList.add("playing");
-  const part = (selected % 4) + 1;
+  // the notes ride the DESTINATION track (the dest select), the same part Freeze
+  // writes into - not the matrix cell's column, which can differ when overridden
+  const part = felTrack() + 1;                 // the destination track (Freeze writes there too)
   status(state.playMode === "project"
-    ? "playing · project split (T1-4 on ch 1-4)"
-    : `playing · slot ${selected + 1} → track ${part}, MIDI channel ${part}`);
+    ? `playing · project split (T1-4 on ch 1-4) · dest T${felTrack() + 1}`
+    : `playing · slot ${selected + 1} → dest track ${part}, MIDI channel ${part}`);
   checkRoute(state.playMode === "project" ? null : part);
   liveLoop(liveToken);
 }
@@ -1042,7 +1047,7 @@ async function liveLoop(token) {
       // selected sequence is the conductor (timing); the others follow it 1:1.
       const parts = state.playMode === "project"
         ? [0, 1, 2, 3].map((t) => ({ p: bank[Math.floor(selected / 4) * 4 + t], ch: t + 1 }))
-        : [{ p, ch: (selected % 4) + 1 }];
+        : [{ p, ch: felTrack() + 1 }];                    // the dest track, live
       // the row each part is on (a part may have its own length)
       for (const part of parts) part.li = part.p?.length ? i % part.p.length : 0;
       const liOf = new Map(parts.map((part) => [part.p, part.li]));
@@ -1425,8 +1430,10 @@ function selectSlot(next) {
     doGenerate(false);
     status(`track ${to + 1}: knobs restored — seed ${state.seed >>> 0}`);
   }
-  if (live && to !== from) followTrack(to + 1);        // ROUT SEL: keep the device on the part we play
-  if (to !== from) syncDestTrack();                    // Freeze/Clear write where the cell says
+  if (to !== from) {
+    syncDestTrack();                                   // Freeze / Clear / Play follow the cell
+    followTrack(felTrack() + 1);                       // ROUT SEL: the unit's own selection follows too
+  }
   renderBank(); renderBuffer();
 }
 
@@ -1659,8 +1666,11 @@ function buildTransport() {
   document.getElementById("freeze").insertAdjacentElement("beforebegin", dl);
   dl.insertAdjacentElement("afterend", ft);
   ft.addEventListener("change", () => {
-    if (Number(ft.value) !== activeTrack()) status(`dest track T${Number(ft.value) + 1} (the matrix row's track is T${activeTrack() + 1})`);
-    else status(`dest track T${Number(ft.value) + 1}`);
+    const t = felTrack() + 1;
+    status(t === activeTrack() + 1
+      ? `dest track T${t}`
+      : `dest track T${t} — the matrix cell is T${activeTrack() + 1}, so Play and Freeze both go to T${t}`);
+    followTrack(t);
   });
   document.getElementById("fill").addEventListener("click", doSendAll);
   document.getElementById("clearall").addEventListener("click",

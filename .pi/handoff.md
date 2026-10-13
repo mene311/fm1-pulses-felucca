@@ -95,6 +95,15 @@ selected slot and morph it in real time).
       classics only appear at their densities — E(3,8) at 37%, E(5,8) at 62%, E(5,16)
       (son clave) at 31% with Loop 16. At Gate 100% (or 0%) euclid and random are identical
       by construction.
+- [x] **One destination for Play, Preview and Freeze (2026-10-13).** The `dest` select next to
+      Freeze decides the track, and **Play/preview ride it too** (they used to ride the matrix
+      cell's column, so an overridden dest meant Freeze and Play disagreed). `dest` now carries a
+      label, follows the cell you select, and its change handler says when it disagrees with the
+      cell (`dest track T1 — the matrix cell is T3, so Play and Freeze both go to T1`). Under
+      ROUT = SEL the device's own selected track follows the dest, except mid-play — switching the
+      unit's track under a held note would orphan it, so that waits for the next Play.
+      Verified headless: cell col 3 → Play on ch 3; dest overridden to T1 → Play on ch 1;
+      tapping a col-4 cell → dest T4, preview on ch 4; Freeze with dest T2 → track 2.
 - [x] Bank strip (16 mini step-maps), tap to select, `←`/`→`
 - [x] 64-step grid, one **circle** per step (white = rest, accent = note)
 - [x] **Step editing + locks** — click a step, `±` semitone, `✕` empty; edits
