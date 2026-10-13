@@ -21,6 +21,7 @@ const DEFAULT = {
   scale: "pentMinor", root: 60,
   lfoWave: "sine", lfoShape: 0, lfoAmp: 50, lfoOffset: 0, lfoRate: 4, octave: 0, gravity: 0, unipolar: false,
   spread: "uniform", bias: 0, quantSteps: 100, dejaVu: 0, loop: 8, loopFrom: 1,
+  playMode: "slot",
 };
 const state = { ...DEFAULT };
 let bank = [];
@@ -712,6 +713,30 @@ async function felSetStep(track, index, st) {
   return fel.readStep(r);
 }
 
+// GET/SET (2/3): scope 1 = a global parameter; v14 = 2 bytes (value + 8192).
+async function felGetGlobal(id) {
+  const r = await felReq(fel.CMD.GET, [1, id], 1500, 1);
+  if (!r || r.length < 4) return null;
+  return (r[2] | (r[3] << 7)) - 8192;
+}
+
+async function felSetGlobal(id, value) {
+  const u = Math.max(-8192, Math.min(8191, Math.round(value))) + 8192;
+  return await felReq(fel.CMD.SET, [1, id, u & 0x7F, (u >> 7) & 0x7F], 1500, 1);
+}
+
+// G_ROUTE (14): 0 CH1-4, 1 SEL, 2 CH5-8, 3 CH9-12, 4 CH13-16. The split needs
+// CH1-4: on SEL every channel plays the selected track and the four parts
+// collapse into one.
+async function checkRoute() {
+  try {
+    const r = await felGetGlobal(14);
+    if (r === 0) status("split: MIDI channels 1-4 -> tracks 1-4 ✓", "ok");
+    else if (r === 1) status("device ROUT is SEL — set MENU > MIDI > ROUT = CH1-4 for the split", "err");
+    else if (r != null) status(`device ROUT is CH${5 + (r - 2) * 4}-${8 + (r - 2) * 4} — set CH1-4 for the split`, "err");
+  } catch { /* no device: the notes just go out */ }
+}
+
 // PROJECT (9): op 0 load, 1 save, 2 query; slot 0..3. The reply is op, slot, used.
 async function felProject(op, slot, timeoutMs = 2500) {
   const r = await felReq(fel.CMD.PROJECT, [op, slot], timeoutMs, 1);
@@ -828,13 +853,16 @@ function swingFrac() {
 }
 
 // Live note out — routes to BLE when it is connected (play-only), USB otherwise.
-function liveNoteOn(note, vel) {
-  if (midi.bleConnected()) { midi.bleSendNoteOn(note, vel); return; }
-  midi.sendNoteOn(note, vel);
+// The channel is the sequence's track (1..4): with MENU > MIDI > ROUT = CH1-4
+// Felucca maps channels 1-4 to parts 1-4, so a sequence lands on the track it
+// would be written to instead of always on the selected one.
+function liveNoteOn(note, vel, channel = 1) {
+  if (midi.bleConnected()) { midi.bleSendNoteOn(note, vel, channel); return; }
+  midi.sendNoteOn(note, vel, channel);
 }
-function liveNoteOff(note) {
-  if (midi.bleConnected()) { midi.bleSendNoteOff(note); return; }
-  midi.sendNoteOff(note);
+function liveNoteOff(note, channel = 1) {
+  if (midi.bleConnected()) { midi.bleSendNoteOff(note, channel); return; }
+  midi.sendNoteOff(note, channel);
 }
 
 const previewHeld = new Set();   // pitches still sounding from a slot preview
@@ -860,10 +888,10 @@ async function playOnce(index) {
     const sDur = stepMs - late;
     if (late) await sleep(late);
     if (st.notes.length) {
-      for (const n of st.notes) { previewHeld.add(n.note); liveNoteOn(n.note, n.vel); audio.noteOn(n.note, n.vel); }
+      for (const n of st.notes) { previewHeld.add(n.note); liveNoteOn(n.note, n.vel, (slot % 4) + 1); audio.noteOn(n.note, n.vel); }
       await sleep(Math.max(12, sDur * gate));
       if (token !== onceToken || live) return;   // cancelled: panicPreview() already stopped these
-      for (const n of st.notes) { previewHeld.delete(n.note); liveNoteOff(n.note); audio.noteOff(n.note); }
+      for (const n of st.notes) { previewHeld.delete(n.note); liveNoteOff(n.note, (slot % 4) + 1); audio.noteOff(n.note); }
       await sleep(Math.max(3, sDur * (1 - gate)));
     } else await sleep(sDur);
   }
@@ -900,12 +928,8 @@ function toggleLive() {
   audio.unlock();
   const btn = document.getElementById("audition");
   btn.textContent = "■ Stop"; btn.classList.add("playing");
-  status("playing (loop)");
-  // WYSIWYG: re-read the device's BPM on Play so the loop matches the unit
-  // even if its tempo knob moved since the last sync.
-  syncDeviceTempo().then((held) => {
-    if (held) status(`playing · device holds ${held} BPM — Tempo synced`, "ok");
-  });
+  status(state.playMode === "project" ? "playing · project split (T1-4 on ch 1-4)" : "playing (loop)");
+  if (state.playMode === "project") checkRoute();
   liveLoop(liveToken);
 }
 
@@ -932,16 +956,34 @@ async function liveLoop(token) {
       const stepMs = qMs * (RATE_QUARTERS[st.rate] ?? RATE_QUARTERS[p.rate]);
       const late = i % 2 === 1 ? stepMs * swingFrac() : 0;
       const sDur = stepMs - late;
+      // slot: the selected sequence on its track's channel. project: the
+      // project's four sequences at once, sequence p*4+t on channel t+1. The
+      // selected sequence is the conductor (timing); the others follow it 1:1.
+      const parts = state.playMode === "project"
+        ? [0, 1, 2, 3].map((t) => ({ p: bank[Math.floor(selected / 4) * 4 + t], ch: t + 1 }))
+        : [{ p, ch: (selected % 4) + 1 }];
 
       const startAt = t0 + elapsed + late;
       let w = startAt - performance.now();
       if (w > 0) await sleep(w);
       markStep(i);
-      if (st.notes.length) {
-        for (const n of st.notes) { liveNoteOn(n.note, n.vel); audio.noteOn(n.note, n.vel); }
+      const held = [];
+      for (const part of parts) {
+        if (!part.p || !part.p.length) continue;
+        const li = i % Math.max(1, part.p.length);
+        for (const n of part.p.steps[li]?.notes ?? []) {
+          liveNoteOn(n.note, n.vel, part.ch);
+          held.push({ n, ch: part.ch, audio: part.p === p });
+          if (part.p === p) audio.noteOn(n.note, n.vel);   // the browser preview plays the selected part
+        }
+      }
+      if (held.length) {
         const offAt = startAt + Math.max(12, sDur * gate);
         w = offAt - performance.now(); if (w > 0) await sleep(w);
-        for (const n of st.notes) { liveNoteOff(n.note); audio.noteOff(n.note); }
+        for (const h of held) {
+          liveNoteOff(h.n.note, h.ch);
+          if (h.audio) audio.noteOff(h.n.note);
+        }
       }
       w = (t0 + elapsed + stepMs) - performance.now();
       if (w > 0) await sleep(w);
@@ -1387,6 +1429,19 @@ function buildTransport() {
       status(`preview: ${audio.SOUNDS.find((s) => s.id === id)?.name ?? id}`);
     },
   });
+  // play: one sequence on its own track, or the whole project on channels 1-4
+  const playEl = sw({
+    label: "play",
+    options: [{ v: "slot", t: "slot" }, { v: "project", t: "project" }],
+    value: state.playMode || "slot",
+    onInput: (v) => {
+      state.playMode = v;
+      status(v === "project"
+        ? "play: the project's four sequences, tracks 1-4 (MIDI channels 1-4)"
+        : `play: the selected sequence on track ${(selected % 4) + 1} (MIDI channel ${(selected % 4) + 1})`);
+    },
+  });
+  muteBtn.insertAdjacentElement("beforebegin", playEl);
   muteBtn.insertAdjacentElement("beforebegin", soundEl);
   document.getElementById("export")?.addEventListener("click", exportState);
   const finp = document.getElementById("importfile");

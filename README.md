@@ -15,7 +15,9 @@ Felucca's storage: **four projects (A–D) × four tracks** — slots 1–4 → 
 - **Piano roll** for the selected sequence (pitch rows, beat/bar lines, loop region, playhead); tap a column to select, tap again to place a note
 - **Write 16** — the whole pipeline: per project `PROJECT load` → write only the steps that differ (`TRACK_STEP`) → `PROJECT save` (flash, transport stopped)
 - **Freeze track** writes the selected sequence into the T1–T4 target track; **Clear track** empties it
-- **Play** still broadcasts live over USB (and BLE for notes); the generator is unchanged
+- **Live split**: Play sends each sequence on **its own track's MIDI channel** (1–4) instead of everything on channel 1, and the `play: project` mode plays the selected project's **four sequences at once**, sequence p×4+t on channel t+1 — a four-part live performance matching what Write 16 stores. Set the unit to **MENU > MIDI > ROUT = CH1-4**; in project mode the app reads `ROUT` and tells you if it is SEL or another bank
+- **Per-track preset banks**: the five local preset slots follow the selected sequence's track (T1–T4), so each part keeps its own knob states
+- **Play** also carries the channel over BLE; the generator is otherwise unchanged
 
 The protocol codec lives in `js/felucca.js` (`node js/felucca.test.mjs`, 15 checks),
 validated against a real FM-1 running Felucca 1.5.1: `INFO` parsing, step

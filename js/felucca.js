@@ -16,7 +16,7 @@
 // the ratchet, set by the device's own RATCH — a write keeps them).
 // A chance of 100 means "always" (the firmware stores 0 for it).
 
-export const CMD = { INFO: 1, STEP_GET: 6, STEP_SET: 7, PROJECT: 9, TRACK: 27, TRACK_STEP: 30, MOTION: 64 };
+export const CMD = { INFO: 1, GET: 2, SET: 3, STEP_GET: 6, STEP_SET: 7, PROJECT: 9, TRACK: 27, TRACK_STEP: 30, MOTION: 64 };
 export const ST = { NOTE: 0, TIE: 1, REST: 2 };
 export const SF = { ACCENT: 1, SLIDE: 2 };
 
