@@ -1187,7 +1187,7 @@ function buildRack() {
         tip: "How much of a step the note sounds for. Felucca plays this from the track's own GATE (a device setting this app does not write), so here it shapes the preview and the bar width; Note len is what reaches the device." })),
       R("noteLen", knob({ label: "Note len", min: 1, max: 32, step: 1, value: state.noteLen, def: DEFAULT.noteLen, size: "sm",
         format: (v) => (v <= 1 ? "step" : `${Math.round(v)} st`),
-        onInput: (v) => { state.noteLen = Math.max(1, Math.round(v)); renderRoll(); },
+        onInput: (v) => { state.noteLen = Math.max(1, Math.round(v)); renderRoll(); saveTrackState(); },
         tip: "How long each note is: 1 = its own step (Gate len only). Above that the note holds across the empty rows that follow, until the next note on that track. Felucca has no per-step length, so a hold is written as TIE rows — the roll draws it as a bar running through them." })),
     ]),
 
@@ -1426,11 +1426,15 @@ function selectSlot(next) {
   saveTrackState();
   selected = next;
   const to = activeTrack();
-  if (to !== from && restoreTrackState(to)) {
-    doGenerate(false);
-    status(`track ${to + 1}: knobs restored — seed ${state.seed >>> 0}`);
-  }
   if (to !== from) {
+    if (restoreTrackState(to)) {
+      doGenerate(false);
+      status(`track ${to + 1}: knobs restored — seed ${state.seed >>> 0}`);
+    } else {
+      // first visit: nothing stored for this track, so it starts from what is on
+      // screen (and that becomes its own state the moment anything is turned)
+      status(`track ${to + 1}: no knobs stored yet — starting from track ${from + 1}'s (turn anything and they stick)`);
+    }
     syncDestTrack();                                   // Freeze / Clear / Play follow the cell
     followTrack(felTrack() + 1);                       // ROUT SEL: the unit's own selection follows too
   }
@@ -1752,6 +1756,10 @@ buildEditor();
 if (restoreTrackState(activeTrack())) { syncRack(); doGenerate(false); }   // the track's own knobs, if it has any
 else doGenerate(true);
 syncDestTrack();
+// the knobs of the track you are on survive a reload / tab close even when the last
+// thing touched was a knob whose onInput does not regenerate (Note len)
+window.addEventListener("pagehide", () => { try { saveTrackState(); } catch (_) {} });
+document.addEventListener("visibilitychange", () => { if (document.hidden) { try { saveTrackState(); } catch (_) {} } });
 initMidi();
 // Tooltips on/off: on phones the long-press hints cover the panel. The observer
 // keeps them off even for titles set later by renders (banks, knobs, switches).

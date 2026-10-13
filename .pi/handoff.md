@@ -104,6 +104,15 @@ selected slot and morph it in real time).
       unit's track under a held note would orphan it, so that waits for the next Play.
       Verified headless: cell col 3 → Play on ch 3; dest overridden to T1 → Play on ch 1;
       tapping a col-4 cell → dest T4, preview on ch 4; Freeze with dest T2 → track 2.
+- [x] **Per-track knobs: two holes closed (2026-10-13, after `adaa943`).** The store worked
+      but had two ways to look broken: (a) `Note len`'s `onInput` never regenerated, so it was
+      only banked at the next track switch — a change followed by a reload lost it; it now saves
+      on the spot, and `pagehide` / `visibilitychange` flush the state too; (b) the first visit to
+      a track silently inherited the previous one's knobs, which reads as "it did nothing" — it
+      now says `track 2: no knobs stored yet — starting from track 1's (turn anything and they
+      stick)`, against `track 1: knobs restored — seed …`. Verified in one browser context across
+      reloads: 5 st on track 1 / 10 st on track 2, both survive a reload. NOTE: the matrix cursor
+      itself is not persisted (a reload lands on slot 1 = T1), only the knobs are.
 - [x] Bank strip (16 mini step-maps), tap to select, `←`/`→`
 - [x] 64-step grid, one **circle** per step (white = rest, accent = note)
 - [x] **Step editing + locks** — click a step, `±` semitone, `✕` empty; edits
