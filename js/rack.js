@@ -223,6 +223,7 @@ function renderBuffer() {
   fitSteps();
   renderScope();
   renderRoll();
+  if (presetShownTrack !== selected % 4) renderPresets();   // the bank follows the track
 }
 
 // Size every step dot to min(cell width, row height) so the circles can never
@@ -1222,19 +1223,43 @@ async function importState(file) {
 }
 
 // --------------------------------------------------------------------------- //
-// Local preset slots (localStorage): the same content as an export file, kept
-// in the browser. save ▸ / ◂ load arm an action, tap a slot to fire it, or
+// Local preset slots, one bank per track (localStorage). The bank follows the
+// selected sequence's track (T1–T4), because the four tracks are different
+// parts: its own five slots of knob state + locks. The fork keeps its own key
+// (the Pages origin is shared with fm1-pulses, whose flat bank is copied in on
+// first run). save ▸ / ◂ load arm an action, tap a slot to fire it, or
 // double-click a slot to save it directly.
 // --------------------------------------------------------------------------- //
 const PRESET_N = 5;
-const PRESET_KEY = "fm1p.presets";
+const PRESET_KEY = "fm1p-felucca.presets";     // { t: [slot, …] } for tracks 0..3
+const LEGACY_KEY = "fm1p.presets";            // the pulses bank: seeds every track once
 let presetArm = null;   // "save" | "load" | null
+let presetShownTrack = -1;
 
-function readPresets() {
-  try {
-    const p = JSON.parse(localStorage.getItem(PRESET_KEY));
-    return Array.isArray(p) ? p.slice(0, PRESET_N) : Array(PRESET_N).fill(null);
-  } catch { return Array(PRESET_N).fill(null); }
+const activeTrack = () => selected % 4;        // sequence = project * 4 + track
+
+function readBanks() {
+  let b = null;
+  try { b = JSON.parse(localStorage.getItem(PRESET_KEY)); } catch { /* fresh */ }
+  if (b && typeof b === "object" && !Array.isArray(b)) {
+    const out = {};
+    for (let t = 0; t < 4; t++) out[t] = Array.isArray(b[t]) ? b[t].slice(0, PRESET_N) : Array(PRESET_N).fill(null);
+    return out;
+  }
+  let legacy = null;
+  try { legacy = JSON.parse(localStorage.getItem(LEGACY_KEY)); } catch { /* fresh */ }
+  const seed = Array.isArray(legacy) ? legacy.slice(0, PRESET_N) : Array(PRESET_N).fill(null);
+  const fresh = {};
+  for (let t = 0; t < 4; t++) fresh[t] = seed.map((p) => (p ? { ...p } : null));
+  return fresh;
+}
+
+function readPresets() { return readBanks()[activeTrack()]; }
+
+function writePresets(arr) {
+  const b = readBanks();
+  b[activeTrack()] = arr;
+  localStorage.setItem(PRESET_KEY, JSON.stringify(b));
 }
 
 function applyStateData(d) {
@@ -1260,23 +1285,36 @@ function savePreset(i) {
     locks: Object.fromEntries(locks),
     selected,
   };
-  localStorage.setItem(PRESET_KEY, JSON.stringify(p));
+  writePresets(p);
   renderPresets();
-  status(`preset ${i + 1} saved ✓ seed ${state.seed >>> 0}`);
+  status(`preset ${i + 1} · track ${activeTrack() + 1} saved ✓ seed ${state.seed >>> 0}`);
 }
 
 function recallPreset(i) {
   const d = readPresets()[i];
-  if (!d) { status(`preset ${i + 1} is empty`, "err"); return; }
+  if (!d) { status(`preset ${i + 1} is empty (track ${activeTrack() + 1})`, "err"); return; }
+  const track = activeTrack();
   applyStateData(d);
-  status(`preset ${i + 1} recalled ✓ seed ${state.seed >>> 0}`);
+  const t = selected % 4;
+  if (t !== track) {                      // stays on this track if the preset named another project
+    selected = selected - t + track;
+    renderBank();
+    renderBuffer();
+  }
+  status(`preset ${i + 1} · track ${track + 1} recalled ✓ seed ${state.seed >>> 0}`);
 }
 
 function renderPresets() {
   const el = document.getElementById("presets");
   if (!el) return;
   el.innerHTML = "";
+  presetShownTrack = activeTrack();
   const p = readPresets();
+  const lab = document.createElement("span");
+  lab.className = "plabel";
+  lab.textContent = `T${presetShownTrack + 1}`;
+  lab.title = "This preset bank follows the selected sequence's track (T1–T4).";
+  el.appendChild(lab);
   const armBtn = (label, arm, title) => {
     const b = document.createElement("button");
     b.textContent = label;

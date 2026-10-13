@@ -264,6 +264,7 @@ body { padding: 12px; font-family: "Panel", ui-sans-serif, system-ui, sans-serif
 .presets button:hover { color: var(--fg); border-color: var(--dim); }
 .presets button.armed { color: var(--fg); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .presets .pslot.filled { color: var(--accent); border-color: var(--accent); font-weight: 700; }
+.presets .plabel { color: var(--dim); font: 700 11px/1 inherit; letter-spacing: .08em; margin-right: 3px; }
 .transport button#audition {
   color: var(--fg); font-weight: 700; padding: 6px 16px; border-color: var(--dim);
 }
