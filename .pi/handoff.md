@@ -123,6 +123,13 @@ selected slot and morph it in real time).
         `T3 knobs —` when it has none yet (it is inheriting), via `paintTrackState()`.
       Verified: boot `T1 knobs ✓` → turn a knob → `T2 knobs —` on a fresh track → turn → `T2 knobs ✓`
       → back on T1 the value is the one it had, and it survives a reload.
+- [x] **The `dest` select is now a track selector (2026-10-13).** It only set the Freeze/Clear
+      destination, so picking T2 there and turning knobs kept editing *T1* (the matrix cursor
+      never moved) — which reads as "the knob states are not stored per track". Choosing a track
+      there now moves the matrix cursor to that column of the current project: knobs, preset bank,
+      Play and Freeze all follow the one choice. The matrix cell works the same way, so the two
+      are in lockstep. Verified: T1 Drift 57 → pick T2 (inherits, `T2 knobs —`) → set 37 → pick T1
+      (57 back) → pick T2 (37 back) → a third track inherits and keeps its own → survives a reload.
 - [x] Bank strip (16 mini step-maps), tap to select, `←`/`→`
 - [x] 64-step grid, one **circle** per step (white = rest, accent = note)
 - [x] **Step editing + locks** — click a step, `±` semitone, `✕` empty; edits

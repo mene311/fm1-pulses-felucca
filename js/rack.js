@@ -1113,7 +1113,7 @@ function applyTheme(id) {
 
 // The build stamp in the themebar: /js and /css URLs are cached per `?v=`, so if
 // this number is not the one you just pushed, the page itself came from cache.
-const BUILD = 101;
+const BUILD = 102;
 
 function buildTheme() {
   const menu = document.getElementById("themes");
@@ -1696,12 +1696,14 @@ function buildTransport() {
   for (let i = 0; i < 4; i++) ft.append(new Option(`T${i + 1}`, String(i)));
   document.getElementById("freeze").insertAdjacentElement("beforebegin", dl);
   dl.insertAdjacentElement("afterend", ft);
+  // Picking a track here IS picking the track: it moves the matrix cursor to that
+  // column of the current project, so the knobs, the preset bank, Play and Freeze
+  // all follow the one choice (they stay in lockstep with the selected cell).
   ft.addEventListener("change", () => {
-    const t = felTrack() + 1;
-    status(t === activeTrack() + 1
-      ? `dest track T${t}`
-      : `dest track T${t} — the matrix cell is T${activeTrack() + 1}, so Play and Freeze both go to T${t}`);
-    followTrack(t);
+    const t = felTrack();
+    const cell = Math.floor(selected / 4) * 4 + t;
+    if (cell !== selected) selectSlot(cell);
+    else { status(`track ${t + 1}`); paintTrackState(); followTrack(t + 1); }
   });
   document.getElementById("fill").addEventListener("click", doSendAll);
   document.getElementById("clearall").addEventListener("click",
