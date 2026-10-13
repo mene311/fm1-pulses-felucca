@@ -123,7 +123,11 @@
   </div>
   <div class="param">
     <h3>Gate length <span class="rng">5–100%</span><span class="kind">knob</span></h3>
-    <p>How long each note holds. Low is staccato, high is legato.</p>
+    <p>How much of a step the note sounds for. Low is staccato, high is legato. Felucca plays this from the track's own GATE setting (which this app does not write), so here it shapes the preview and the width of the note bar.</p>
+  </div>
+  <div class="param">
+    <h3>Note len <span class="rng">1–32 steps</span><span class="kind">knob</span></h3>
+    <p>How long each note is. 1 is its own step (Gate length only). Above that the note holds across the empty steps that follow, until the next note on that track — a short step followed by rests keeps sounding. Felucca has no length field per step, so the app writes a hold as <b>TIE</b> steps, which is exactly what the firmware's TIE does: no retrigger, it extends the note already playing. The roll draws the hold as a line running on through those steps.</p>
   </div>
 
   <h2>Global</h2>

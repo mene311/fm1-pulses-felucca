@@ -4,7 +4,7 @@
 import { generate, generateBank, SCALES, LFO_WAVES, midiName, classicName } from "./generator.js?v=71";
 import { encodeWrite, emptyPattern } from "./pattern.js?v=65";
 import * as midi from "./midi.js?v=70";
-import * as fel from "./felucca.js?v=1";
+import * as fel from "./felucca.js?v=2";
 import * as audio from "./audio.js?v=67";
 import { knob, sw } from "./knob.js?v=66";
 
@@ -15,7 +15,7 @@ const SLOTS = 16;
 const DEFAULT = {
   seed: (Math.random() * 1e9) | 0,
   drift: 50,
-  length: 64, rate: 6, tempo: 120, swing: 50, gate: 50,
+  length: 64, rate: 6, tempo: 120, swing: 50, gate: 50, noteLen: 1,
   gateProb: 70, velocity: 100, humanize: 0, gateQuant: 0, snapGrid: 4,
   gateBlend: 0, euclidRot: 0,
   scale: "pentMinor", root: 60,
@@ -93,13 +93,18 @@ function renderBank() {
         for (const nt of p?.steps?.[i]?.notes ?? []) { if (nt.note < lo) lo = nt.note; if (nt.note > hi) hi = nt.note; }
       if (hi >= lo) {
         const span = Math.max(1, hi - lo);
+        const nl = Math.max(1, state.noteLen ?? 1);
+        const end = Math.min(64, p.length);
         for (let i = 0; i < 64; i++) {
-          for (const nt of p.steps[i]?.notes ?? []) {
+          const notes = p.steps[i]?.notes ?? [];
+          if (!notes.length) continue;
+          const hold = fel.holdLen(p, i, end, nl);   // Note len: the line runs on through the held rows
+          for (const nt of notes) {
             const yb = y + 1 + (ch - 2) * (1 - (nt.note - lo) / span);
             const bh = Math.max(1.2, (ch - 2) / (span + 1));
             ctx.globalAlpha = sel ? 0.95 : 0.6;
             ctx.fillStyle = accent;
-            ctx.fillRect(x + (cw / 64) * i + 0.5, yb - bh / 2, Math.max(1, cw / 64 - 0.5), bh);
+            ctx.fillRect(x + (cw / 64) * i + 0.5, yb - bh / 2, Math.max(1, (cw / 64) * hold - 0.5), bh);
             n++;
           }
         }
@@ -319,17 +324,25 @@ function renderRoll() {
     ctx.beginPath(); ctx.moveTo(X(ls) + 0.5, ROLL_PADT); ctx.lineTo(X(ls) + 0.5, h - ROLL_PADB); ctx.stroke();
   }
 
-  // notes: a bar per note, width from the Gate knob; echo copies dimmer
+  // notes: a bar per note, width from the Gate knob; echo copies dimmer. With
+  // Note len > 1 the bar runs on through the empty rows the note holds over (the
+  // TIE rows Freeze writes), thinner and dimmer, up to the next note on the track.
   const gw = Math.max(0.35, Math.min(0.95, (state.gate ?? 50) / 100)) * colW;
   for (let i = 0; i < 64; i++) {
     const st = p.steps[i];
     if (!st || i >= p.length || !st.notes.length) continue;
     const echo = st.echo != null;
+    const span = fel.holdLen(p, i, Math.min(64, p.length), Math.max(1, state.noteLen ?? 1));
     for (const n of st.notes) {
       const y = Y(n.note);
-      ctx.globalAlpha = echo ? 0.4 : 0.6 + 0.4 * Math.min(1, (n.vel ?? 100) / 127);
+      const ink = echo ? 0.4 : 0.6 + 0.4 * Math.min(1, (n.vel ?? 100) / 127);
+      ctx.globalAlpha = ink;
       ctx.fillStyle = accent;
       ctx.fillRect(X(i) + 1, y + 1, Math.max(2, gw - 1), Math.max(2, rowH - 2));
+      if (span > 1) {                              // the hold: a thinner line through the TIE rows
+        ctx.globalAlpha = ink * 0.5;
+        ctx.fillRect(X(i) + gw, y + Math.max(1, rowH / 4), X(i + span) - X(i) - gw, Math.max(1, rowH / 2));
+      }
       ctx.globalAlpha = 1;
       if (locks.has(`${selected}:${i}`)) {
         ctx.strokeStyle = "rgba(255,255,255,0.6)";
@@ -553,11 +566,13 @@ function doGenerate(newSeed = false) {
   bank = generateBank(state, state.drift);
   applyLocks();
   renderBank(); renderBuffer();
+  saveTrackState();          // the bank and the knobs belong to the selected track
   status(`16 slots · seed ${state.seed}`);
 }
 
 let regenTimer = null;
 function scheduleRegen() {
+  saveTrackState();          // the knobs are the selected track's
   clearTimeout(regenTimer);
   regenTimer = setTimeout(() => {
     bank = generateBank(state, state.drift);
@@ -725,16 +740,43 @@ async function felSetGlobal(id, value) {
   return await felReq(fel.CMD.SET, [1, id, u & 0x7F, (u >> 7) & 0x7F], 1500, 1);
 }
 
-// G_ROUTE (14): 0 CH1-4, 1 SEL, 2 CH5-8, 3 CH9-12, 4 CH13-16. The split needs
-// CH1-4: on SEL every channel plays the selected track and the four parts
-// collapse into one.
-async function checkRoute() {
+// G_ROUTE (14): 0 CH1-4, 1 SEL, 2 CH5-8, 3 CH9-12, 4 CH13-16. The parts need
+// CH1-4: on SEL every channel plays the unit's selected track, so live notes from
+// every sequence land on that one track (T1 by default) whatever we send. Under
+// SEL we therefore select the track on the device itself (TRACK below).
+// `part` is the track the current Play targets (slot mode) or null (project mode).
+let deviceRoute = null;                              // last G_ROUTE read: 0 CH1-4, 1 SEL, …
+async function checkRoute(part = null) {
+  if (profile !== "felucca") return null;           // only Felucca has G_ROUTE
+  const want = part ? `track ${part}` : "tracks 1-4";
   try {
     const r = await felGetGlobal(14);
-    if (r === 0) status("split: MIDI channels 1-4 -> tracks 1-4 ✓", "ok");
-    else if (r === 1) status("device ROUT is SEL — set MENU > MIDI > ROUT = CH1-4 for the split", "err");
-    else if (r != null) status(`device ROUT is CH${5 + (r - 2) * 4}-${8 + (r - 2) * 4} — set CH1-4 for the split`, "err");
+    deviceRoute = r;
+    if (r === 0) status(`ROUT CH1-4 ✓ — the notes ride MIDI channel ${part || "1-4"} → ${want}`, "ok");
+    else if (r === 1) {
+      // every channel plays the selected track: switch that track ourselves
+      const sel = part ? await felSelectTrack(part - 1) : null;
+      if (part && sel != null) status(`ROUT SEL — selected track ${part} on the FM-1 so ${want} plays it (set ROUT = CH1-4 to play the four parts at once)`, "ok");
+      else status(`device ROUT is SEL: every channel plays its selected track, so ${want} gets nothing. Set MENU > MIDI > ROUT = CH1-4`, "err");
+    }
+    else if (r != null) status(`device ROUT is CH${5 + (r - 2) * 4}-${8 + (r - 2) * 4}: set MENU > MIDI > ROUT = CH1-4 to play ${want}`, "err");
+    return r;
   } catch { /* no device: the notes just go out */ }
+  return null;
+}
+
+// TRACK (27): select a track on the device (query without arguments).
+async function felSelectTrack(track) {
+  const t = Math.max(0, Math.min(3, Math.round(track) || 0));
+  const r = await felReq(fel.CMD.TRACK, [t], 1200, 1);
+  return r ? r[0] : null;
+}
+
+// Keep the device's selected track in step with what we play (only needed under
+// ROUT = SEL, where the device's own selection decides which part sounds).
+async function followTrack(track) {
+  if (profile !== "felucca" || deviceRoute !== 1) return;
+  await felSelectTrack(track - 1);
 }
 
 // PROJECT (9): op 0 load, 1 save, 2 query; slot 0..3. The reply is op, slot, used.
@@ -768,7 +810,7 @@ async function doSendAllFelucca() {
       let bankChanged = 0;
       for (let t = 0; t < 4; t++) {
         const slot = b * 4 + t;
-        const want = fel.pulseSteps(bank[slot], nstep, Math.round(state.velocity ?? 100));
+        const want = fel.pulseSteps(bank[slot], nstep, Math.round(state.velocity ?? 100), Math.max(1, state.noteLen ?? 1));
         let changed = 0;
         for (let i = 0; i < nstep; i++) {
           const cur = await felGetStep(t, i);
@@ -801,7 +843,7 @@ async function doFreezeFelucca(slotIndex) {
   try {
     const info = fwInfo ?? await detectFirmware();
     const nstep = info?.nstep || 64;
-    const want = fel.pulseSteps(bank[slotIndex], nstep, Math.round(state.velocity ?? 100));
+    const want = fel.pulseSteps(bank[slotIndex], nstep, Math.round(state.velocity ?? 100), Math.max(1, state.noteLen ?? 1));
     status(`freezing slot ${slotIndex + 1} → track ${track + 1}: reading ${nstep} steps…`);
     const plan = [];
     for (let i = 0; i < nstep; i++) {
@@ -865,10 +907,37 @@ function liveNoteOff(note, channel = 1) {
   midi.sendNoteOff(note, channel);
 }
 
-const previewHeld = new Set();   // pitches still sounding from a slot preview
+const previewHeld = new Map();   // "ch:note" -> { note, ch }: what a slot preview is sounding
+const heldKey = (note, ch) => ch + ":" + note;
 function panicPreview() {
-  for (const n of previewHeld) { try { liveNoteOff(n); } catch (_) {} try { audio.noteOff(n); } catch (_) {} }
+  // the channel matters: the notes went out on the sequence's track (1..4), so a
+  // note-off on channel 1 would leave tracks 2-4 hanging
+  for (const h of previewHeld.values()) {
+    try { liveNoteOff(h.note, h.ch); } catch (_) {}
+    try { audio.noteOff(h.note); } catch (_) {}
+  }
   previewHeld.clear();
+}
+
+// Note length: how many rows a note starting at row i covers (1 = its own row).
+// Same rule as the Freeze path (fel.holdLen), so what we play is what we write:
+// the hold runs through the empty rows and stops at the next note on the track.
+// Per row, the notes that must stop in it: a hold stops in its own last row.
+const offCache = new WeakMap();  // pattern -> { nl, len, rows }
+function releasesOf(p) {
+  const len = Math.max(1, Math.min(64, p?.length ?? 64));
+  const nl = Math.max(1, state.noteLen ?? 1);
+  const hit = offCache.get(p);
+  if (hit && hit.nl === nl && hit.len === len) return hit.rows;
+  const rows = Array.from({ length: 64 }, () => []);
+  for (let i = 0; i < len; i++) {
+    const notes = p.steps[i]?.notes ?? [];
+    if (!notes.length) continue;
+    const span = fel.holdLen(p, i, len, nl);
+    for (const n of notes) rows[Math.min(63, i + span - 1)].push(n);
+  }
+  offCache.set(p, { nl, len, rows });
+  return rows;
 }
 
 async function playOnce(index) {
@@ -880,6 +949,8 @@ async function playOnce(index) {
   audio.unlock();
   const qMs = 60000 / Math.max(20, Math.min(300, state.tempo || 120));
   const gate = Math.min(100, Math.max(5, state.gate ?? 50)) / 100;
+  const ch = (slot % 4) + 1;
+  const off = releasesOf(p);
   for (let i = 0; i < p.length; i++) {
     if (token !== onceToken || live) return;
     const st = p.steps[i];
@@ -887,11 +958,12 @@ async function playOnce(index) {
     const late = i % 2 === 1 ? stepMs * swingFrac() : 0;
     const sDur = stepMs - late;
     if (late) await sleep(late);
-    if (st.notes.length) {
-      for (const n of st.notes) { previewHeld.add(n.note); liveNoteOn(n.note, n.vel, (slot % 4) + 1); audio.noteOn(n.note, n.vel); }
+    for (const n of st.notes) { previewHeld.set(heldKey(n.note, ch), { note: n.note, ch }); liveNoteOn(n.note, n.vel, ch); audio.noteOn(n.note, n.vel); }
+    const stop = off[i];                     // a one-row note stops here; a hold later
+    if (stop.length) {
       await sleep(Math.max(12, sDur * gate));
       if (token !== onceToken || live) return;   // cancelled: panicPreview() already stopped these
-      for (const n of st.notes) { previewHeld.delete(n.note); liveNoteOff(n.note, (slot % 4) + 1); audio.noteOff(n.note); }
+      for (const n of stop) { previewHeld.delete(heldKey(n.note, ch)); liveNoteOff(n.note, ch); audio.noteOff(n.note); }
       await sleep(Math.max(3, sDur * (1 - gate)));
     } else await sleep(sDur);
   }
@@ -928,8 +1000,11 @@ function toggleLive() {
   audio.unlock();
   const btn = document.getElementById("audition");
   btn.textContent = "■ Stop"; btn.classList.add("playing");
-  status(state.playMode === "project" ? "playing · project split (T1-4 on ch 1-4)" : "playing (loop)");
-  if (state.playMode === "project") checkRoute();
+  const part = (selected % 4) + 1;
+  status(state.playMode === "project"
+    ? "playing · project split (T1-4 on ch 1-4)"
+    : `playing · slot ${selected + 1} → track ${part}, MIDI channel ${part}`);
+  checkRoute(state.playMode === "project" ? null : part);
   liveLoop(liveToken);
 }
 
@@ -942,6 +1017,7 @@ async function liveLoop(token) {
   const t0 = performance.now();
   let elapsed = 0;      // ms into the phrase, on the absolute clock
   let i = 0;
+  let pending = [];     // sounds still held across rows (Note len > 1)
   while (live && token === liveToken) {
     try {
       const p = bank[selected];
@@ -962,25 +1038,32 @@ async function liveLoop(token) {
       const parts = state.playMode === "project"
         ? [0, 1, 2, 3].map((t) => ({ p: bank[Math.floor(selected / 4) * 4 + t], ch: t + 1 }))
         : [{ p, ch: (selected % 4) + 1 }];
+      // the row each part is on (a part may have its own length)
+      for (const part of parts) part.li = part.p?.length ? i % part.p.length : 0;
+      const liOf = new Map(parts.map((part) => [part.p, part.li]));
 
       const startAt = t0 + elapsed + late;
       let w = startAt - performance.now();
       if (w > 0) await sleep(w);
       markStep(i);
-      const held = [];
+      const nl = Math.max(1, state.noteLen ?? 1);
       for (const part of parts) {
         if (!part.p || !part.p.length) continue;
-        const li = i % Math.max(1, part.p.length);
-        for (const n of part.p.steps[li]?.notes ?? []) {
+        const len = Math.max(1, Math.min(64, part.p.length));
+        const span = fel.holdLen(part.p, part.li, len, nl);
+        for (const n of part.p.steps[part.li]?.notes ?? []) {
           liveNoteOn(n.note, n.vel, part.ch);
-          held.push({ n, ch: part.ch, audio: part.p === p });
+          // a one-row note stops in this row; a longer one in its last row (Note len)
+          pending.push({ n, ch: part.ch, audio: part.p === p, pRef: part.p, relRow: part.li + span - 1 });
           if (part.p === p) audio.noteOn(n.note, n.vel);   // the browser preview plays the selected part
         }
       }
-      if (held.length) {
-        const offAt = startAt + Math.max(12, sDur * gate);
-        w = offAt - performance.now(); if (w > 0) await sleep(w);
-        for (const h of held) {
+      const due = pending.filter((h) => liOf.get(h.pRef) === h.relRow);
+      if (due.length) {
+        pending = pending.filter((h) => liOf.get(h.pRef) !== h.relRow);
+        w = (startAt + Math.max(12, sDur * gate)) - performance.now();
+        if (w > 0) await sleep(w);
+        for (const h of due) {
           liveNoteOff(h.n.note, h.ch);
           if (h.audio) audio.noteOff(h.n.note);
         }
@@ -991,6 +1074,8 @@ async function liveLoop(token) {
       i++;
     } catch (e) { status("play error: " + (e.message || e), "err"); await sleep(200); t0 += 200; }
   }
+  for (const h of pending) { try { liveNoteOff(h.n.note, h.ch); } catch (_) {} if (h.audio) audio.noteOff(h.n.note); }
+  pending = [];
   clearPlayhead();
 }
 
@@ -1088,7 +1173,12 @@ function buildRack() {
       R("snapGrid", knob({ label: "Snap grid", min: 2, max: 8, step: 1, value: state.snapGrid, def: DEFAULT.snapGrid, size: "sm",
         format: (v) => `${Math.round(v)}`, onInput: setState("snapGrid") })),
       R("gate", knob({ label: "Gate len", min: 5, max: 100, value: state.gate, def: DEFAULT.gate, size: "sm",
-        format: (v) => `${Math.round(v)}%`, onInput: setState("gate") })),
+        format: (v) => `${Math.round(v)}%`, onInput: setState("gate"),
+        tip: "How much of a step the note sounds for. Felucca plays this from the track's own GATE (a device setting this app does not write), so here it shapes the preview and the bar width; Note len is what reaches the device." })),
+      R("noteLen", knob({ label: "Note len", min: 1, max: 32, step: 1, value: state.noteLen, def: DEFAULT.noteLen, size: "sm",
+        format: (v) => (v <= 1 ? "step" : `${Math.round(v)} st`),
+        onInput: (v) => { state.noteLen = Math.max(1, Math.round(v)); renderRoll(); },
+        tip: "How long each note is: 1 = its own step (Gate len only). Above that the note holds across the empty rows that follow, until the next note on that track. Felucca has no per-step length, so a hold is written as TIE rows — the roll draws it as a bar running through them." })),
     ]),
 
     sect("Global", 2, [
@@ -1279,6 +1369,56 @@ let presetArm = null;   // "save" | "load" | null
 let presetShownTrack = -1;
 
 const activeTrack = () => selected % 4;        // sequence = project * 4 + track
+
+// --------------------------------------------------------------------------- //
+// Per-track knob state (localStorage). The four tracks are different parts, so
+// each keeps its own knobs: turning something writes it to the track you are on,
+// and moving the cursor to another track restores that track's settings and
+// re-derives the bank from them (the bank comes from the state, so it follows the
+// track). The five manual preset slots above stay per track too.
+// --------------------------------------------------------------------------- //
+const TRACK_STATE_KEY = "fm1p-felucca.trackstate";   // { t: { knobs… } } for tracks 0..3
+const TRACK_KEYS = Object.keys(DEFAULT).filter((k) => k !== "playMode");   // playMode is an output setting, not a knob of the part
+
+function readTrackStates() {
+  try {
+    const b = JSON.parse(localStorage.getItem(TRACK_STATE_KEY));
+    if (b && typeof b === "object" && !Array.isArray(b)) return b;
+  } catch { /* fresh */ }
+  return {};
+}
+
+function saveTrackState() {
+  const b = readTrackStates();
+  b[activeTrack()] = Object.fromEntries(TRACK_KEYS.map((k) => [k, state[k]]));
+  try { localStorage.setItem(TRACK_STATE_KEY, JSON.stringify(b)); } catch { /* blocked/full */ }
+}
+
+function restoreTrackState(t) {
+  const d = readTrackStates()[t];
+  if (!d) return false;                            // a track with nothing stored keeps what is on screen
+  for (const k of TRACK_KEYS) if (k in d) state[k] = d[k];
+  refs.seed?.setValue(state.seed, false);
+  syncRack();
+  return true;
+}
+
+// Move the cursor (a matrix tap or ←/→): bank the knobs on the track we leave,
+// load the ones of the track we land on.
+function selectSlot(next) {
+  next = Math.max(0, Math.min(SLOTS - 1, Math.round(next) || 0));
+  if (next === selected) { renderBank(); renderBuffer(); return; }
+  const from = activeTrack();
+  saveTrackState();
+  selected = next;
+  const to = activeTrack();
+  if (to !== from && restoreTrackState(to)) {
+    doGenerate(false);
+    status(`track ${to + 1}: knobs restored — seed ${state.seed >>> 0}`);
+  }
+  if (live && to !== from) followTrack(to + 1);        // ROUT SEL: keep the device on the part we play
+  renderBank(); renderBuffer();
+}
 
 function readBanks() {
   let b = null;
@@ -1568,8 +1708,8 @@ document.addEventListener("keydown", (e) => {
   if (e.code === "Space") { e.preventDefault(); toggleLive(); }
   if (e.key === "f") doFreeze(selected);
   if (e.key === "g") doGenerate(true);
-  if (e.key === "ArrowRight") { selected = (selected + 1) % SLOTS; renderBank(); renderBuffer(); }
-  if (e.key === "ArrowLeft") { selected = (selected + SLOTS - 1) % SLOTS; renderBank(); renderBuffer(); }
+  if (e.key === "ArrowRight") selectSlot(selected + 1);
+  if (e.key === "ArrowLeft") selectSlot(selected - 1);
 });
 
 // Coming back to the tab re-syncs the Tempo knob to the device's real BPM —
@@ -1581,7 +1721,8 @@ buildRack();
 refreshLoopRanges();
 buildTransport();
 buildEditor();
-doGenerate(true);
+if (restoreTrackState(activeTrack())) { syncRack(); doGenerate(false); }   // the track's own knobs, if it has any
+else doGenerate(true);
 initMidi();
 // Tooltips on/off: on phones the long-press hints cover the panel. The observer
 // keeps them off even for titles set later by renders (banks, knobs, switches).
@@ -1635,8 +1776,6 @@ rcv?.addEventListener("pointerdown", (e) => {
 document.getElementById("bank")?.addEventListener("pointerdown", (e) => {
   const s = bankPad(e);
   if (s == null) return;
-  selected = s;
-  renderBank();
-  renderBuffer();
+  selectSlot(s);                      // per-track knobs: bank the old track, load the new
   if (!live) playOnce(s);
 });

@@ -36,6 +36,49 @@ selected slot and morph it in real time).
 - [x] `js/app.js` — all UI wiring
 
 **Features**
+- [x] **Note length / holds (2026-10-13).** Felucca has no length field per step:
+      inside a row the gate is the track's own `GATE` (`seq.c`: `g = period * P_SGATE / 128`,
+      it cannot pass the row) and across rows the only mechanism is **`time = TIE`**
+      (a TIE never retriggers: `seq_off = gate + period/2`, `seq_hold = slide || next_tie`;
+      a `REST` releases). So "note length" is implemented as ties and exposed as one
+      control: **Note len 1–32 steps** — 1 is today's behaviour (each note inside its own
+      step, `Gate len` %), above that the note holds across the empty rows until the next
+      note on the track. `fel.holdLen` / `pulseSteps(..., noteLen)` write `NOTE` + `TIE`
+      rows; the roll and the bank cells draw the hold as a line running through the held
+      rows; the preview (once + live loop) releases a note in its **last** row instead of
+      its own, also fixes hanging notes when the loop stops mid-hold. Verified: 25 codec
+      checks, and headless (fake Felucca over Web MIDI) — Freeze wrote 49 NOTE + 15 TIE
+      rows, ties landing in the gaps before the next note, 0 console errors.
+      ⚠ `Gate len` still only shapes the preview and the bar width: the app writes steps
+      (`TRACK_STEP`), never `P_SGATE`, so the device keeps its own gate. Wiring `TRACK`
+      (cmd 27) would make it real on the device — it would also change the project's own
+      setting, so it needs a call on whether that is in the tool's contract.
+- [x] **Per-track knobs + live routing fixes (2026-10-13).** Three things the four-track
+      matrix needs, all verified headless against a fake Felucca:
+      1. **The live MIDI channel was never the problem** — a slot on track *t* has always gone
+         out on channel *t* (slot 6 → ch 2 on the wire). What collapses everything onto one
+         track is the device: with **`ROUT = SEL`** every channel plays the unit's *selected*
+         track, and the app only checked that in project mode. `checkRoute()` now runs on
+         **every** Play, slot mode included.
+      2. Under SEL the app now **selects the track on the device itself** (`TRACK`, cmd 27),
+         so the sequence you play lands on its own track instead of T1: "ROUT SEL — selected
+         track 2 on the FM-1 so track 2 plays it". With ROUT = CH1-4 nothing extra is sent.
+      3. **Interrupted previews left notes hanging on T2–T4**: `panicPreview()` (and the
+         `previewHeld` set) tracked pitches but not channels, so it released on channel 1
+         notes that were played on channels 2–4. Both are keyed `ch:note` now and released on
+         their own channel — verified: a held note on ch 2 gets its note-off on ch 2, none on ch 1.
+- [x] **Per-track knob state.** The four tracks are different parts, so the knobs are now
+      remembered **per track** (`fm1p-felucca.trackstate`, localStorage): turning anything banks
+      it on the track you are on, and moving the cursor to another track restores that track's
+      settings, re-derives the bank from them and says so (`track 2: knobs restored`). A track
+      with nothing stored inherits what is on screen. The five manual preset slots stay per
+      track; `playMode` is deliberately *not* per track (an output setting). Verified: track 1
+      Note len 5 / track 2 Note len 9 survive switching back and forth.
+      ⚠ Consequence of the one-seed-per-bank model: the bank is derived from the active track's
+      knobs, so switching tracks re-derives **all 16 cells**, not just that column. Giving each
+      column its own generator state (a switch touching nothing else) is a bigger change to the
+      slot → (project, track) mapping in `generateBank` — needs a call on whether drift should
+      stay 16 slots or become 4 per column.
 - [x] Bank strip (16 mini step-maps), tap to select, `←`/`→`
 - [x] 64-step grid, one **circle** per step (white = rest, accent = note)
 - [x] **Step editing + locks** — click a step, `±` semitone, `✕` empty; edits
@@ -328,10 +371,11 @@ Facts that are solid:
       scheduler using `MIDIOutput.send(data, timestamp)` would remove that too.
 - [ ] Magnet interval set (root/m3/4th/5th/octave) is a guess — tune to taste.
 - [ ] No persistence yet (bank + locks are lost on reload) — localStorage.
-- [ ] Out of scope of the app but open on the device side: per-step
-  ratchet/chance/accent/tie & slide and per-pattern Chain are **not** carried by
-  `0x20` (firmware layout unpublished); ties are reachable only via real-time
-  recording. See `mvave-fm1/README.md`.
+- [ ] Out of scope of the app but open on the device side: on the **Baud Girl** firmwares
+  per-step ratchet/chance/accent/tie & slide and per-pattern Chain are **not** carried by
+  `0x20` (firmware layout unpublished), so ties there are reachable only via real-time
+  recording. That limit is `0x20`'s, not Felucca's: this fork writes ties over the editor
+  protocol (`TRACK_STEP`), see the Note len entry above. See `mvave-fm1/README.md`.
 
 ## How it's deployed
 

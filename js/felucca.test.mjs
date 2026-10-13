@@ -71,7 +71,47 @@ ok("pulseSteps rests the tail", () => {
   assert.equal(steps[5].time, fel.ST.REST);
   assert.equal(steps[7].time, fel.ST.REST);
 });
+
+// Note length: a hold is TIE rows (Felucca has no per-step length). The hold stops
+// at the next note row and at the pattern's length.
+const held = { length: 16, steps: Array.from({ length: 64 }, () => ({ notes: [] })) };
+held.steps[0] = { notes: [{ note: 60, vel: 100 }] };
+held.steps[2] = { notes: [{ note: 62, vel: 100 }] };
+held.steps[4] = { notes: [{ note: 64, vel: 100 }] };
+held.steps[8] = { notes: [{ note: 65, vel: 100 }] };
+ok("holdLen 1 is the row", () => assert.equal(fel.holdLen(held, 0, 16, 1), 1));
+ok("holdLen covers the empty rows", () => assert.equal(fel.holdLen(held, 2, 16, 8), 2));
+ok("holdLen stops at the next note", () => assert.equal(fel.holdLen(held, 0, 16, 8), 2));
+ok("holdLen stops at the pattern end", () => assert.equal(fel.holdLen(held, 8, 9, 8), 1));
+const noHold = fel.pulseSteps(held, 16, 100, 1);
+ok("noteLen 1 writes no ties", () => assert.equal(noHold.filter((s) => s.time === fel.ST.TIE).length, 0));
+const withHold = fel.pulseSteps(held, 16, 100, 8);
+ok("noteLen 8 ties the empty rows the next note leaves", () => {
+  assert.equal(withHold[2].time, fel.ST.NOTE);          // its own note, untouched
+  assert.equal(withHold[3].time, fel.ST.TIE);            // row 3 holds 62
+  assert.equal(withHold[0].time, fel.ST.NOTE);           // 60 holds through row 1
+  assert.equal(withHold[1].time, fel.ST.TIE);            // .. and stops at 62 on row 2
+  assert.equal(withHold[4].time, fel.ST.NOTE);           // 64 is followed by 65: no hold
+  assert.equal(withHold[6].time, fel.ST.TIE);            // 65 holds to the end of LEN
+  assert.equal(withHold[7].time, fel.ST.TIE);
+  assert.equal(withHold[15].time, fel.ST.TIE);          // the hold runs to the end of LEN
+});
+ok("a hold is not carried past LEN", () => {
+  const long = fel.pulseSteps(held, 24, 100, 8);       // rows past LEN are rests, so they release
+  assert.equal(long[15].time, fel.ST.TIE);
+  assert.equal(long[16].time, fel.ST.REST);
+  assert.equal(long[23].time, fel.ST.REST);
+});
+ok("a tie step carries what the device needs", () => {
+  assert.equal(withHold[6].n, 0);
+  assert.deepEqual(withHold[6].notes, [0, 0, 0, 0]);
+  assert.deepEqual(fel.stepBytes(withHold[6]).slice(0, 7), [0, 0, 0, 0, 0, 1, 0]);
+});
+ok("a tie is not a retrigger: it differs from the note row", () =>
+  assert.equal(fel.sameStep(withHold[6], withHold[4]), false));
 ok("restStep", () => assert.deepEqual(fel.restStep(),
   { n: 0, notes: [0, 0, 0, 0], time: 2, flags: 0, vel: 0, hit: 0, acc: 0, hi: 0, chance: 100 }));
+ok("tieStep", () => assert.deepEqual(fel.tieStep(),
+  { n: 0, notes: [0, 0, 0, 0], time: 1, flags: 0, vel: 0, hit: 0, acc: 0, hi: 0, chance: 100 }));
 
 console.log(`${n} checks passed`);

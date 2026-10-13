@@ -13,13 +13,15 @@ Felucca's storage: **four projects (A–D) × four tracks** — slots 1–4 → 
 
 - **4×4 sequence matrix** (projects × tracks), each cell a mini piano roll — tap to select
 - **Piano roll** for the selected sequence (pitch rows, beat/bar lines, loop region, playhead); tap a column to select, tap again to place a note
+- **Note len** (1–32 steps) — how long each note is: 1 = its own step, more = it **holds across the empty steps until the next note on that track**. Felucca has no per-step length, so a hold is written as **TIE** steps (the firmware extends the note already playing); the roll draws it as a line running on through them
 - **Write 16** — the whole pipeline: per project `PROJECT load` → write only the steps that differ (`TRACK_STEP`) → `PROJECT save` (flash, transport stopped)
 - **Freeze track** writes the selected sequence into the T1–T4 target track; **Clear track** empties it
-- **Live split**: Play sends each sequence on **its own track's MIDI channel** (1–4) instead of everything on channel 1, and the `play: project` mode plays the selected project's **four sequences at once**, sequence p×4+t on channel t+1 — a four-part live performance matching what Write 16 stores. Set the unit to **MENU > MIDI > ROUT = CH1-4**; in project mode the app reads `ROUT` and tells you if it is SEL or another bank
+- **Live split**: Play sends each sequence on **its own track's MIDI channel** (1–4) instead of everything on channel 1, and the `play: project` mode plays the selected project's **four sequences at once**, sequence p×4+t on channel t+1 — a four-part live performance matching what Write 16 stores. Set the unit to **MENU > MIDI > ROUT = CH1-4**; the app reads `ROUT` on every Play and tells you what it finds. If the unit is on **SEL** (every channel plays its *selected* track) the app selects the matching track on the device itself, so the sequence you play still lands on its own track
+- **Per-track knobs**: the four tracks are different parts, so each keeps its own knob state (localStorage). Move around the 4×4 matrix and the knobs follow the track you land on; a track that has never been used inherits what is on screen. The five manual preset slots are per track too
 - **Per-track preset banks**: the five local preset slots follow the selected sequence's track (T1–T4), so each part keeps its own knob states
 - **Play** also carries the channel over BLE; the generator is otherwise unchanged
 
-The protocol codec lives in `js/felucca.js` (`node js/felucca.test.mjs`, 15 checks),
+The protocol codec lives in `js/felucca.js` (`node js/felucca.test.mjs`, 25 checks),
 validated against a real FM-1 running Felucca 1.5.1: `INFO` parsing, step
 write/read/restore, and the full `PROJECT` load/save cycle.
 

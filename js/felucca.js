@@ -15,6 +15,11 @@
 // Step times: 0 NOTE, 1 TIE, 2 REST. Flags: 1 accent, 2 slide (bits 3-4 are
 // the ratchet, set by the device's own RATCH — a write keeps them).
 // A chance of 100 means "always" (the firmware stores 0 for it).
+//
+// Note length: there is no length field in a Felucca step. Inside a row the
+// note's gate is the track's own GATE parameter (firmware seq.c:
+// g = period * P_SGATE / 128 — it cannot pass the row); across rows the only
+// way to hold is TIE (see holdLen / pulseSteps / tieStep below).
 
 export const CMD = { INFO: 1, GET: 2, SET: 3, STEP_GET: 6, STEP_SET: 7, PROJECT: 9, TRACK: 27, TRACK_STEP: 30, MOTION: 64 };
 export const ST = { NOTE: 0, TIE: 1, REST: 2 };
@@ -92,16 +97,43 @@ function fromPulse(src, velDefault = 100) {
   };
 }
 
+// How many rows the note at `i` covers, 1..noteLen. Felucca has no per-step length:
+// a longer note is written as TIE rows (firmware seq.c: on a TIE the track does not
+// retrigger, it pushes the sounding note's off forward and keeps holding while TIE
+// steps chain), and the hold ends at the next NOTE row. So the span stops at the
+// next row that has notes, and at the end of the pattern (rows past `length` are
+// rests, which release — a hold is not carried into the next pass).
+// `pattern` is the *pulses* pattern: a row with notes anywhere in it ends the hold.
+export function holdLen(pattern, i, end = 64, noteLen = 1) {
+  const steps = pattern?.steps ?? [];
+  let len = 1;
+  while (len < noteLen && i + len < end && !(steps[i + len]?.notes?.length)) len++;
+  return len;
+}
+
 // A pulses pattern (64 steps, up to 9 notes each) -> `nstep` Felucca steps
 // (up to 4 notes each). Steps past the pattern's length become rests.
-export function pulseSteps(pattern, nstep = 64, velDefault = 100) {
+// noteLen > 1 holds each note across the following empty rows (TIE steps) so it
+// sounds until the next note on the track — the device's own length control.
+export function pulseSteps(pattern, nstep = 64, velDefault = 100, noteLen = 1) {
   const len = Math.min(pattern?.length ?? nstep, nstep);
   const out = [];
   for (let i = 0; i < nstep; i++) out.push(fromPulse(i < len ? pattern?.steps?.[i] : null, velDefault));
+  if (noteLen > 1)
+    for (let i = 0; i < len; i++) {
+      if (out[i].time !== ST.NOTE) continue;
+      const span = holdLen(pattern, i, len, noteLen);
+      for (let k = 1; k < span; k++) out[i + k] = tieStep();
+    }
   return out;
 }
 
 // A REST step (what clearing a track writes).
 export function restStep() {
   return { n: 0, notes: [0, 0, 0, 0], time: ST.REST, flags: 0, vel: 0, hit: 0, acc: 0, hi: 0, chance: 100 };
+}
+
+// A TIE step: it holds what the track already plays; it never triggers by itself.
+export function tieStep() {
+  return { n: 0, notes: [0, 0, 0, 0], time: ST.TIE, flags: 0, vel: 0, hit: 0, acc: 0, hi: 0, chance: 100 };
 }
