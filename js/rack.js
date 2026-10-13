@@ -674,6 +674,11 @@ async function doClearAll() {
 let profile = null;      // null unknown · "felucca" · "baudgirl"
 let fwInfo = null;       // the INFO reply while the Felucca profile is on
 const felTrack = () => Math.max(0, Math.min(3, Number(document.getElementById("ftrack")?.value ?? 0) || 0));
+// The destination follows the selected cell's track unless the user picked one.
+function syncDestTrack() {
+  const ft = document.getElementById("ftrack");
+  if (ft && Number(ft.value) !== activeTrack()) ft.value = String(activeTrack());
+}
 
 function paintProfile() {
   const ft = document.getElementById("ftrack");
@@ -1421,6 +1426,7 @@ function selectSlot(next) {
     status(`track ${to + 1}: knobs restored — seed ${state.seed >>> 0}`);
   }
   if (live && to !== from) followTrack(to + 1);        // ROUT SEL: keep the device on the part we play
+  if (to !== from) syncDestTrack();                    // Freeze/Clear write where the cell says
   renderBank(); renderBuffer();
 }
 
@@ -1639,15 +1645,23 @@ function buildTransport() {
     status(m ? "browser audio muted" : "browser audio on");
   });
   document.getElementById("freeze").addEventListener("click", () => doFreeze(selected));
-  // Felucca target track (shown only for the Felucca profile): Freeze and
-  // Clear act on it, since that firmware has four tracks instead of a 16-slot bank.
+  // Felucca target track: Freeze and Clear act on it. It follows the cell you
+  // select (the same track the knobs and the live channel follow), and stays
+  // editable for a one-off write somewhere else.
+  const dl = document.createElement("span");
+  dl.textContent = "dest";
+  dl.setAttribute("style", "font:600 9px/1 inherit;letter-spacing:.08em;text-transform:uppercase;opacity:.55;align-self:center");
   const ft = document.createElement("select");
   ft.id = "ftrack";
-  ft.title = "Felucca target track — Freeze and Clear act on it";
+  ft.title = "Destination track for Freeze and Clear — it follows the cell you select in the matrix; change it to write somewhere else once";
   ft.setAttribute("style", "font:600 11px/1.4 inherit;padding:2px 6px;border-radius:6px;background:#1b1926;color:#ececf0;border:1px solid #3a3750");
   for (let i = 0; i < 4; i++) ft.append(new Option(`T${i + 1}`, String(i)));
-  document.getElementById("freeze").insertAdjacentElement("beforebegin", ft);
-  ft.addEventListener("change", () => status(`Felucca target: track ${Number(ft.value) + 1}`));
+  document.getElementById("freeze").insertAdjacentElement("beforebegin", dl);
+  dl.insertAdjacentElement("afterend", ft);
+  ft.addEventListener("change", () => {
+    if (Number(ft.value) !== activeTrack()) status(`dest track T${Number(ft.value) + 1} (the matrix row's track is T${activeTrack() + 1})`);
+    else status(`dest track T${Number(ft.value) + 1}`);
+  });
   document.getElementById("fill").addEventListener("click", doSendAll);
   document.getElementById("clearall").addEventListener("click",
     () => (profile === "felucca" ? doClearTrackFelucca() : doClearAll()));
@@ -1727,6 +1741,7 @@ buildTransport();
 buildEditor();
 if (restoreTrackState(activeTrack())) { syncRack(); doGenerate(false); }   // the track's own knobs, if it has any
 else doGenerate(true);
+syncDestTrack();
 initMidi();
 // Tooltips on/off: on phones the long-press hints cover the panel. The observer
 // keeps them off even for titles set later by renders (banks, knobs, switches).
